@@ -1,0 +1,51 @@
+# Gradle & Kotlin files
+.gradle/
+build/
+*/build/
+.kotlin/
+.cxx/
+
+# Local configuration & secrets (NEVER commit)
+local.properties
+.env
+.env.*
+!.env.example
+
+# Keystores and signing secrets - NEVER commit to git
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+signing/
+release-keystore*
+release-keystore/
+keystore.properties
+*.properties.local
+
+# Android Studio / IDE / VS Code
+.idea/
+.vscode/
+.navigation/
+*.iml
+.shelf/
+captures/
+*.hprof
+app/proguard_logs/
+**/mapping.txt
+
+# Build artifacts (Release APKs are published via GitHub Releases)
+*.apk
+*.aab
+*.ap_
+
+# Logs & temporary files
+*.log
+*.orig
+*.bak
+*.swp
+docs/screenshots/*.xml
+
+# OS files
+.DS_Store
+Thumbs.db

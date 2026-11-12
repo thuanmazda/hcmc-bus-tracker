@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="440" viewBox="0 0 960 440">
+  <defs>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0F172A" flood-opacity="0.32"/>
+    </filter>
+    <filter id="haloGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#F59E0B" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Canvas background (muted OSM-like light cream street grid) -->
+  <rect width="960" height="440" fill="#F4F6F8"/>
+  <path d="M0 110 H960 M0 250 H960 M160 0 V440 M480 0 V440 M800 0 V440" stroke="#E2E8F0" stroke-width="10"/>
+  <path d="M0 110 H960 M0 250 H960 M160 0 V440 M480 0 V440 M800 0 V440" stroke="#FFFFFF" stroke-width="6"/>
+  <!-- Sample Route Casing + Line -->
+  <path d="M40 250 L440 250 L560 110 L920 110" fill="none" stroke="#004D40" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+  <path d="M40 250 L440 250 L560 110 L920 110" fill="none" stroke="#00897B" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Title Banner -->
+  <rect x="20" y="16" width="920" height="42" rx="8" fill="#0F172A"/>
+  <text x="36" y="42" fill="#FFFFFF" font-family="Segoe UI, Roboto, sans-serif" font-size="16" font-weight="700">
+    HCMC Bus Tracker — Phase 12 Vehicle Marker &amp; Map Hierarchy Mockup (Top-Down Coach Design)
+  </text>
+
+  <!-- 1. Normal Moving Bus (38dp) -->
+  <g transform="translate(135, 165)">
+    <text x="0" y="-64" text-anchor="middle" fill="#1E293B" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">1. Normal Moving (38 dp)</text>
+    <text x="0" y="-48" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="11">Bearing rotated, FRESH/SLIGHT</text>
+    <!-- Directional heading pointer -->
+    <g transform="rotate(35)" filter="url(#shadow)">
+      <!-- Subtle nose cone -->
+      <path d="M0 -34 L9 -21 L-9 -21 Z" fill="#FFFFFF"/>
+      <path d="M0 -31 L6 -21 L-6 -21 Z" fill="#00796B"/>
+      <!-- White contrast casing -->
+      <rect x="-15" y="-23" width="30" height="44" rx="9" fill="#FFFFFF"/>
+      <!-- Bus coach body -->
+      <rect x="-12" y="-20" width="24" height="38" rx="7" fill="#00796B"/>
+      <!-- Windshield / Front deck (signals front heading clearly) -->
+      <rect x="-9" y="-17" width="18" height="9" rx="3" fill="#B2DFDB"/>
+      <!-- Roof AC / coach detail -->
+      <rect x="-6" y="-4" width="12" height="14" rx="2.5" fill="#004D40" opacity="0.55"/>
+      <!-- Headlight dots -->
+      <circle cx="-7" cy="-19" r="1.6" fill="#FEF08A"/>
+      <circle cx="7" cy="-19" r="1.6" fill="#FEF08A"/>
+    </g>
+    <!-- Compact medium/high zoom label -->
+    <rect x="-36" y="34" width="72" height="22" rx="6" fill="#1E293B" stroke="#FFFFFF" stroke-width="1.8" filter="url(#shadow)"/>
+    <text x="0" y="49" text-anchor="middle" fill="#FFFFFF" font-family="Segoe UI, sans-serif" font-size="11" font-weight="700">50E-616.63</text>
+  </g>
+
+  <!-- 2. Selected Bus (50dp + 60dp Halo) -->
+  <g transform="translate(360, 165)">
+    <text x="0" y="-64" text-anchor="middle" fill="#991B1B" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">2. Selected Bus (50dp + 60dp Halo)</text>
+    <text x="0" y="-48" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="11">Highest Z-order + Full Plate</text>
+    <!-- 60dp Amber Selection Halo -->
+    <circle cx="0" cy="0" r="40" fill="#F59E0B" opacity="0.24" stroke="#F59E0B" stroke-width="2" filter="url(#haloGlow)"/>
+    <g transform="rotate(0)" filter="url(#shadow)">
+      <path d="M0 -42 L11 -27 L-11 -27 Z" fill="#FFFFFF"/>
+      <path d="M0 -39 L7.5 -27 L-7.5 -27 Z" fill="#D32F2F"/>
+      <rect x="-19" y="-29" width="38" height="56" rx="11" fill="#FFFFFF"/>
+      <rect x="-15" y="-25" width="30" height="48" rx="8.5" fill="#D32F2F"/>
+      <rect x="-11" y="-21" width="22" height="11" rx="3.5" fill="#FECACA"/>
+      <rect x="-7" y="-5" width="14" height="17" rx="3" fill="#7F1D1D" opacity="0.55"/>
+      <circle cx="-9" cy="-24" r="2" fill="#FEF08A"/>
+      <circle cx="9" cy="-24" r="2" fill="#FEF08A"/>
+    </g>
+    <!-- Priority full plate pill -->
+    <rect x="-42" y="42" width="84" height="25" rx="7" fill="#B71C1C" stroke="#FBBF24" stroke-width="2.2" filter="url(#shadow)"/>
+    <text x="0" y="59" text-anchor="middle" fill="#FFFFFF" font-family="Segoe UI, sans-serif" font-size="12" font-weight="700">50E-762.03</text>
+  </g>
+
+  <!-- 3. Stale / Held / No-Heading Variants -->
+  <g transform="translate(595, 165)">
+    <text x="0" y="-64" text-anchor="middle" fill="#334155" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">3. Non-Rotating / Aged States</text>
+    <text x="0" y="-48" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="11">hasValidHeading=false | STALE/HELD</text>
+
+    <!-- Sub A: No heading stationary (upright rounded coach, no nose cone) -->
+    <g transform="translate(-45, 0)" filter="url(#shadow)">
+      <rect x="-15" y="-20" width="30" height="40" rx="10" fill="#FFFFFF"/>
+      <rect x="-12" y="-17" width="24" height="34" rx="7" fill="#00796B"/>
+      <rect x="-8" y="-13" width="16" height="8" rx="2.5" fill="#B2DFDB"/>
+      <!-- Pause/Stationary indicator badge -->
+      <circle cx="11" cy="-13" r="6.5" fill="#F59E0B" stroke="#FFFFFF" stroke-width="1.5"/>
+      <rect x="9" y="-16" width="1.6" height="6" fill="#FFFFFF"/>
+      <rect x="11.6" y="-16" width="1.6" height="6" fill="#FFFFFF"/>
+    </g>
+    <text x="-45" y="38" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="10" font-weight="600">No Heading</text>
+
+    <!-- Sub B: STALE / HELD -->
+    <g transform="translate(45, 0)" filter="url(#shadow)">
+      <path d="M0 -31 L8 -20 L-8 -20 Z" fill="#FFFFFF"/>
+      <path d="M0 -28 L5 -20 L-5 -20 Z" fill="#64748B"/>
+      <rect x="-14" y="-21" width="28" height="40" rx="8" fill="#FFFFFF" stroke="#94A3B8" stroke-dasharray="3,2" stroke-width="1.5"/>
+      <rect x="-11" y="-18" width="22" height="34" rx="6" fill="#64748B"/>
+      <rect x="-8" y="-15" width="16" height="8" rx="2" fill="#CBD5E1"/>
+      <!-- Clock / Stale mini-badge -->
+      <circle cx="11" cy="-14" r="6.5" fill="#475569" stroke="#FFFFFF" stroke-width="1.5"/>
+      <path d="M11 -17 V-14 L13 -13" stroke="#FFFFFF" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    </g>
+    <text x="45" y="38" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="10" font-weight="600">STALE / HELD</text>
+  </g>
+
+  <!-- 4. Stop Cluster + Overlap Picker Indicator -->
+  <g transform="translate(825, 165)">
+    <text x="0" y="-64" text-anchor="middle" fill="#1E3A8A" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">4. Clusters &amp; Overlap</text>
+    <text x="0" y="-48" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="11">Stops cluster; Buses open picker</text>
+
+    <!-- Stop Cluster Badge (zoom < 13) -->
+    <g transform="translate(-45, -4)" filter="url(#shadow)">
+      <circle cx="0" cy="0" r="18" fill="#1D4ED8" stroke="#FFFFFF" stroke-width="2.5"/>
+      <text x="0" y="5" text-anchor="middle" fill="#FFFFFF" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">12</text>
+    </g>
+    <text x="-45" y="38" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="10" font-weight="600">Stop Cluster</text>
+
+    <!-- Nearby Buses -> Overlap Tap -->
+    <g transform="translate(45, -4)">
+      <g transform="translate(-7, 5) rotate(20)" filter="url(#shadow)">
+        <rect x="-11" y="-16" width="22" height="32" rx="6" fill="#FFFFFF"/>
+        <rect x="-8.5" y="-13.5" width="17" height="27" rx="4.5" fill="#00796B"/>
+      </g>
+      <g transform="translate(7, -5) rotate(20)" filter="url(#shadow)">
+        <rect x="-11" y="-16" width="22" height="32" rx="6" fill="#FFFFFF"/>
+        <rect x="-8.5" y="-13.5" width="17" height="27" rx="4.5" fill="#00796B"/>
+      </g>
+      <circle cx="15" cy="-16" r="8.5" fill="#0F172A" stroke="#FFFFFF" stroke-width="1.6"/>
+      <text x="15" y="-12.5" text-anchor="middle" fill="#FFFFFF" font-family="Segoe UI, sans-serif" font-size="10" font-weight="700">2</text>
+    </g>
+    <text x="45" y="38" text-anchor="middle" fill="#475569" font-family="Segoe UI, sans-serif" font-size="10" font-weight="600">Tap -&gt; Picker</text>
+  </g>
+
+  <!-- Bottom Legend Bar -->
+  <rect x="20" y="295" width="920" height="125" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="40" y="322" fill="#0F172A" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">
+    MapLibre Z-Order &amp; Visual Hierarchy (Bottom to Top)
+  </text>
+  <text x="40" y="346" fill="#334155" font-family="Segoe UI, sans-serif" font-size="11.5">
+    1. OSM Basemap  ->  2. Route Casing (8.5dp)  ->  3. Route Line (5.5dp)  ->  4. Stop Cluster &amp; Stops (4.5-8.5dp)
+  </text>
+  <text x="40" y="368" fill="#334155" font-family="Segoe UI, sans-serif" font-size="11.5">
+    5. User GPS Accuracy (translucent)  ->  6. Normal Vehicles (38dp, sorted)  ->  7. Selected Vehicle (50dp + 60dp Halo)
+  </text>
+  <text x="40" y="390" fill="#334155" font-family="Segoe UI, sans-serif" font-size="11.5">
+    8. Adaptive Plate Labels (low=hidden, med=short, high=full; selected prioritized)  ->  9. User Blue Dot (22dp)  ->  10. Overlays / Picker Sheet
+  </text>
+</svg>
