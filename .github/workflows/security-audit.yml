@@ -34,17 +34,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify Only README.md is Tracked in Markdown Files
+      - name: Verify Only Allowed Markdown Files are Tracked
         run: |
-          TRACKED_MD=$(git ls-files "*.md")
+          TRACKED_MD=$(git ls-files "*.md" | sort)
+          EXPECTED_MD=$(printf "README.md\nSECURITY_AND_PRIVACY_AUDIT.md" | sort)
           echo "Tracked markdown files:"
           echo "$TRACKED_MD"
-          if [ "$TRACKED_MD" != "README.md" ]; then
-            echo "ERROR: Only root README.md is permitted to be tracked on GitHub."
-            echo "Internal markdown documentation must remain local-only."
+          if [ "$TRACKED_MD" != "$EXPECTED_MD" ]; then
+            echo "ERROR: Unpermitted markdown files tracked in repository."
+            echo "Only README.md and SECURITY_AND_PRIVACY_AUDIT.md are allowed."
             exit 1
           fi
-          echo "PASS: Only README.md is tracked."
+          echo "PASS: Only allowed public markdown documentation is tracked."
 
       - name: Verify No Secrets or Keystore Files Tracked
         run: |

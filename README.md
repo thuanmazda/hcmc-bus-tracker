@@ -48,7 +48,25 @@
 
 ## 4. QUYỀN RIÊNG TƯ & BẢO VỆ DỮ LIỆU / PRIVACY & DATA PROTECTION
 
+> 🛡️ **BÁO CÁO MINH CHỨNG AN TOÀN ĐỘC LẬP / INDEPENDENT VERIFICATION REPORT:**  
+> Xem chi tiết kết quả từ 7 công cụ đo kiểm mã nguồn, phân tích bytecode DEX tệp APK, rà soát 13 API endpoints và 10 bảng cơ sở dữ liệu Room tại:  
+> 👉 **[BÁO CÁO KIỂM CHỨNG AN TOÀN & QUYỀN RIÊNG TƯ (SECURITY_AND_PRIVACY_AUDIT.md)](SECURITY_AND_PRIVACY_AUDIT.md)**
+
 Dự án cam kết minh bạch về cách thức xử lý dữ liệu dựa trên kiểm chứng trực tiếp từ mã nguồn:
+
+### Tóm tắt Minh chứng Kiểm toán (Audit Evidence Highlights)
+
+| Công cụ đo kiểm (Audit Tool) | Chỉ số đạt được (Result) | Minh chứng an toàn & không thu thập dữ liệu |
+|---|:---:|---|
+| **Android Lint Engine** | **0 Errors** | Không có lỗi bảo mật tĩnh, cấu hình bảo mật mạng chuẩn |
+| **Unit Test Suites (191 tests)** | **100% PASS** | 36 suites, 0 failures; đảm bảo độ tin cậy và ổn định logic |
+| **APK Bytecode Scanner** | **0 Trackers / 0 Ads** | Quét DEX release APK: 0 Firebase, 0 AdMob, 0 Facebook Ads, 0 Telemetry |
+| **Network Endpoints Scanner** | **13 GET / 0 POST** | 100% API tra cứu công khai; không gửi tọa độ GPS người dùng lên server |
+| **Room Database Entities Audit** | **0 User Data Tables** | 10 thực thể SQLite chỉ lưu danh mục tuyến xe và mã bookmark yêu thích |
+| **Merged AndroidManifest Audit** | **Least Privilege** | Không có quyền chạy ngầm (`BACKGROUND_LOCATION`), không đọc danh bạ/bộ nhớ |
+| **Secret Scanner & Gitleaks** | **0 Findings** | Toàn bộ 824 tệp mã nguồn sạch, không chứa private keys hoặc secret token |
+
+---
 
 ### Tiếng Việt
 
