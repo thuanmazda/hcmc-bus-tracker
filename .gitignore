@@ -49,3 +49,14 @@ docs/screenshots/*.xml
 # OS files
 .DS_Store
 Thumbs.db
+
+# Documentation & Markdown Policy (Phase 16)
+# ONLY the root README.md is tracked on GitHub.
+# All internal markdown reports, phase audits, research docs remain local only.
+*.md
+*/**/*.md
+!/README.md
+
+# Internal security reports & research directories
+docs/security/
+docs/research/

@@ -1,0 +1,80 @@
+name: Security Audit & Code Quality
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  repository-integrity:
+    name: Check Repository Cleanliness & Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Only README.md is Tracked in Markdown Files
+        run: |
+          TRACKED_MD=$(git ls-files "*.md")
+          echo "Tracked markdown files:"
+          echo "$TRACKED_MD"
+          if [ "$TRACKED_MD" != "README.md" ]; then
+            echo "ERROR: Only root README.md is permitted to be tracked on GitHub."
+            echo "Internal markdown documentation must remain local-only."
+            exit 1
+          fi
+          echo "PASS: Only README.md is tracked."
+
+      - name: Verify No Secrets or Keystore Files Tracked
+        run: |
+          FORBIDDEN_FILES=$(git ls-files "*.jks" "*.keystore" "keystore.properties" "*.env" "*.env.*" "local.properties" | grep -v "\.example" || true)
+          if [ -n "$FORBIDDEN_FILES" ]; then
+            echo "ERROR: Sensitive files detected in Git tracking:"
+            echo "$FORBIDDEN_FILES"
+            exit 1
+          fi
+          echo "PASS: No sensitive signing, keystore, or environment files tracked."
+
+  build-and-lint:
+    name: Android Lint & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --no-daemon --stacktrace
