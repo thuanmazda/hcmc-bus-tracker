@@ -10,9 +10,9 @@
 
 Ứng dụng sử dụng nguồn dữ liệu mở/công khai từ hệ thống EBMS của Trung tâm Quản lý Giao thông công cộng TP.HCM (`https://apicms.ebms.vn`) kết hợp nền tảng bản đồ số nguồn mở **MapLibre Native SDK** (`11.5.2`) và nguồn bản đồ nền **OpenStreetMap / FPT STIS**.
 
-- **Phiên bản hiện tại:** `v1.0.0`
-- **Kiểm thử tự động:** 36 test suites / 191 unit tests PASS, Android Lint passed.
-- **Nghiệm thu thiết bị thật:** Đã nghiệm thu hiển thị và tương tác trên thiết bị Android (`Xiaomi M2102J2SC`, Android 13, 440 dpi).
+- **Phiên bản hiện tại:** `v1.1.0` (Build 2) — Xem chi tiết thay đổi tại [CHANGELOG.md](file:///e:/MultiGo%20Reworked/CHANGELOG.md)
+- **Kiểm thử tự động:** 42 test suites / 259 unit tests PASS (100%), Android Lint passed.
+- **Nghiệm thu thiết bị thật:** Đã nghiệm thu toàn diện trên thiết bị Android (`Xiaomi Mi 10S - M2102J2SC`, HyperOS 1.0 / Android 13, 440 dpi, AMOLED 90Hz).
 - **Tải bản phát hành:** Tải APK chính thức đã ký số tại [GitHub Releases](https://github.com/thuanmazda/hcmc-bus-tracker/releases).
 
 ---
