@@ -8,6 +8,7 @@ import com.hcmcbustracker.core.model.BusStop
 import com.hcmcbustracker.core.model.DatasetSyncProgress
 import com.hcmcbustracker.core.model.DatasetUpdateOutcome
 import com.hcmcbustracker.core.model.Route
+import com.hcmcbustracker.core.model.SearchHistoryItem
 import com.hcmcbustracker.core.model.StaticDatasetMetadata
 import com.hcmcbustracker.core.model.UserPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,6 +31,7 @@ data class PersonalUiState(
     val selectedTab: PersonalTab = PersonalTab.STOPS,
     val favoriteStops: List<BusStop> = emptyList(),
     val favoriteRoutes: List<Route> = emptyList(),
+    val searchHistory: List<SearchHistoryItem> = emptyList(),
     val userPreferences: UserPreferences = UserPreferences(),
     val lastSyncTimestamp: Long? = null,
     val staticDatasetMetadata: StaticDatasetMetadata? = null,
@@ -98,16 +100,30 @@ class PersonalViewModel @Inject constructor(
         PersonalMeta(tab, lastSync, syncMeta, datasetStatus)
     }
 
-    val uiState: StateFlow<PersonalUiState> = combine(
+    private data class FavoritesAndHistory(
+        val stops: List<BusStop>,
+        val routes: List<Route>,
+        val history: List<SearchHistoryItem>
+    )
+
+    private val favoritesAndHistoryFlow = combine(
         repository.getFavoriteStops(),
         repository.getFavoriteRoutes(),
+        repository.getSearchHistory()
+    ) { stops, routes, history ->
+        FavoritesAndHistory(stops, routes, history)
+    }
+
+    val uiState: StateFlow<PersonalUiState> = combine(
+        favoritesAndHistoryFlow,
         repository.getUserPreferences(),
         personalMetaFlow
-    ) { favStops, favRoutes, prefs, meta ->
+    ) { favAndHist, prefs, meta ->
         PersonalUiState(
             selectedTab = meta.tab,
-            favoriteStops = favStops,
-            favoriteRoutes = favRoutes,
+            favoriteStops = favAndHist.stops,
+            favoriteRoutes = favAndHist.routes,
+            searchHistory = favAndHist.history,
             userPreferences = prefs,
             lastSyncTimestamp = meta.datasetStatus.metadata?.datasetUpdatedAt ?: meta.lastSync,
             staticDatasetMetadata = meta.datasetStatus.metadata,
@@ -164,6 +180,30 @@ class PersonalViewModel @Inject constructor(
     fun setNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             repository.setNotificationsEnabled(enabled)
+        }
+    }
+
+    fun setArrivalAlertThresholds(timeMinutes: Int, distanceMeters: Double) {
+        viewModelScope.launch {
+            repository.setArrivalAlertThresholds(timeMinutes, distanceMeters)
+        }
+    }
+
+    fun toggleStopNotification(stopId: Int, enabled: Boolean) {
+        viewModelScope.launch {
+            repository.toggleStopNotification(stopId, enabled)
+        }
+    }
+
+    fun removeSearchHistoryItem(query: String) {
+        viewModelScope.launch {
+            repository.removeSearchHistoryItem(query)
+        }
+    }
+
+    fun clearSearchHistory() {
+        viewModelScope.launch {
+            repository.clearSearchHistory()
         }
     }
 

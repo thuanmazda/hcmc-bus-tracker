@@ -135,6 +135,30 @@ object VehicleInterpolationEngine {
         }
 
         // 4. Apply Dead-Reckoning Latency Compensation (strict Phase 5/9 or bounded adaptive EBMS mode)
+        val historySamples = if (previousPosition != null &&
+            previousPosition.plateNumber == plateNumber &&
+            previousPosition.targetStopId == targetStopId &&
+            previousPosition.gpsTimestampMillis != null
+        ) {
+            val currMillis = PositionCompensationEngine.parseGpsTimestampMillis(timestampIso) ?: currentTimeMillis
+            if (currMillis > previousPosition.gpsTimestampMillis) {
+                listOf(
+                    com.hcmcbustracker.core.model.VehicleGpsSample(
+                        distanceMeters = previousPosition.rawDistanceMeters,
+                        speedKmH = previousPosition.speedKmH,
+                        timestampMillis = previousPosition.gpsTimestampMillis
+                    ),
+                    com.hcmcbustracker.core.model.VehicleGpsSample(
+                        distanceMeters = distanceToStopMeters,
+                        speedKmH = speedKmH,
+                        timestampMillis = currMillis
+                    )
+                )
+            } else emptyList()
+        } else {
+            emptyList()
+        }
+
         val compensation = PositionCompensationEngine.calculateCompensation(
             rawDistanceMeters = distanceToStopMeters,
             speedKmH = speedKmH,
@@ -144,7 +168,8 @@ object VehicleInterpolationEngine {
             isDirectionValid = isDirectionValid,
             config = config,
             allowAdaptiveExtendedProjection = allowAdaptiveExtendedProjection,
-            isGpsTimestampFrozen = isGpsTimestampFrozen
+            isGpsTimestampFrozen = isGpsTimestampFrozen,
+            historySamples = historySamples
         )
 
         val effectiveDistance = compensation.effectiveDistanceMeters

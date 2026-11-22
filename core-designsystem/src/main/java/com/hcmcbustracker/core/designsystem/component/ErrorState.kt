@@ -12,8 +12,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,9 +24,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.hcmcbustracker.core.designsystem.theme.HcmcBusTrackerTheme
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
 
+/**
+ * Error state screen representation.
+ * Displays human-friendly failure context and clear recovery action.
+ */
 @Composable
 fun ErrorState(
     message: String,
@@ -40,38 +42,37 @@ fun ErrorState(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(32.dp),
+            .padding(TransitDimens.Spacing2xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Surface(
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
-            modifier = Modifier.size(72.dp)
+            color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+            modifier = Modifier.size(68.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(TransitDimens.IconXl)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(TransitDimens.SpacingBase))
 
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 17.sp
+                fontWeight = FontWeight.Bold
             ),
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(TransitDimens.SpacingXs))
 
         Text(
             text = message,
@@ -80,22 +81,13 @@ fun ErrorState(
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(TransitDimens.SpacingLg))
 
-        Button(
-            onClick = onRetry,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            Text(text = "Thử lại")
-        }
+        TransitPrimaryButton(
+            text = "Thử lại",
+            icon = Icons.Default.Refresh,
+            onClick = onRetry
+        )
     }
 }
 
@@ -104,7 +96,7 @@ fun ErrorState(
 private fun ErrorStatePreview() {
     HcmcBusTrackerTheme {
         ErrorState(
-            message = "Không thể kết nối đến máy chủ EBMS. Dữ liệu đã lưu ngoại tuyến vẫn sẵn sàng.",
+            message = "Không thể kết nối đến máy chủ xe buýt. Vui lòng kiểm tra lại đường truyền mạng.",
             onRetry = {}
         )
     }

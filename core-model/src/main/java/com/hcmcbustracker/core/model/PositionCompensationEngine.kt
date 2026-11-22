@@ -81,6 +81,13 @@ enum class VehicleArrivalStatus(val labelVi: String) {
     UNKNOWN("Không đủ dữ liệu xác định")
 }
 
+data class VehicleGpsSample(
+    val distanceMeters: Double,
+    val speedKmH: Double,
+    val timestampMillis: Long,
+    val responseReceivedMillis: Long = System.currentTimeMillis()
+)
+
 /**
  * Centralized thresholds for GPS latency classification, bounded dead-reckoning projection,
  * and stop arrival classification. Single source of truth across engines, ViewModels, and UI.
@@ -98,9 +105,9 @@ data class ArrivalStatusThresholds(
 data class PositionCompensationConfig(
     val minMovingSpeedKmH: Double = 1.5,
     val maxValidSpeedKmH: Double = 90.0,
-    val freshThresholdSeconds: Long = 30L,
-    val slightDelayThresholdSeconds: Long = 60L,
-    val delayedThresholdSeconds: Long = 120L,
+    val freshThresholdSeconds: Long = 60L,
+    val slightDelayThresholdSeconds: Long = 120L,
+    val delayedThresholdSeconds: Long = 300L,
     val maxFullProjectionAgeSeconds: Long = 120L,
     val maxAdaptiveProjectionAgeSeconds: Long = 190L,
     val agedTailDecayFactor: Double = 0.35,
@@ -195,7 +202,7 @@ object PositionCompensationEngine {
         }
 
         val absDist = kotlin.math.abs(distanceToTargetStopMeters)
-        val isReliableFreshForArrival = gpsAgeSeconds <= config.delayedThresholdSeconds
+        val isReliableFreshForArrival = gpsAgeSeconds <= config.slightDelayThresholdSeconds
 
         if (isReliableFreshForArrival && absDist <= t.atStopDistanceMeters && speedKmH <= t.atStopMaxSpeedKmH) {
             return VehicleArrivalStatus.AT_STOP
@@ -266,7 +273,8 @@ object PositionCompensationEngine {
         isDirectionValid: Boolean = true,
         config: PositionCompensationConfig = PositionCompensationConfig.DEFAULT,
         allowAdaptiveExtendedProjection: Boolean = false,
-        isGpsTimestampFrozen: Boolean = false
+        isGpsTimestampFrozen: Boolean = false,
+        historySamples: List<VehicleGpsSample> = emptyList()
     ): CompensationResult {
         // 1. Check Direction validity
         if (!isDirectionValid) {
@@ -323,7 +331,17 @@ object PositionCompensationEngine {
         }
 
         // 5. Stationary vehicle check (speed <= 1.5 km/h)
-        if (speedKmH <= config.minMovingSpeedKmH) {
+        val validHistory = historySamples.filter { it.timestampMillis in 1..currentTimeMillis }
+            .sortedBy { it.timestampMillis }
+        val hasRecentMovement = validHistory.size >= 2 && run {
+            val prev = validHistory[validHistory.size - 2]
+            val curr = validHistory.last()
+            val dt = (curr.timestampMillis - prev.timestampMillis) / 1000.0
+            val dd = prev.distanceMeters - curr.distanceMeters
+            dt in 1.0..90.0 && dd > 5.0
+        }
+
+        if (speedKmH <= config.minMovingSpeedKmH && !hasRecentMovement) {
             return CompensationResult(
                 rawDistanceMeters = rawDistanceMeters,
                 effectiveDistanceMeters = rawDistanceMeters,
@@ -362,16 +380,30 @@ object PositionCompensationEngine {
             )
         }
 
-        // 7. Continuous C0 bounded dead-reckoning projection:
-        //    - [0..120s]: full speedMps * age
-        //    - (120..190s] (adaptive): continuous tapered tail velocity * decay factor, bounded by maxProjectedDistanceMeters
-        val speedMps = speedKmH * (1000.0 / 3600.0)
-        val rawProjected = if (ageSecondsDouble <= config.maxFullProjectionAgeSeconds) {
-            speedMps * ageSecondsDouble
+        // 7. Controlled Kinematic Projection (Phase 13 Method C):
+        //    Integrates 1-sample, 2-sample or 3-sample kinematic estimation with stop proximity deceleration
+        val instantSpeedMps = speedKmH * (1000.0 / 3600.0)
+        val (kinematicSpeedMps, kinematicAcceleration) = computeKinematicVelocityAndAcceleration(
+            instantSpeedMps = instantSpeedMps,
+            validHistory = validHistory
+        )
+
+        // Stop proximity deceleration envelope: when within 100m of stop, bound speed by stopping curve
+        val proximitySpeedMps = if (rawDistanceMeters in 1.0..100.0) {
+            val maxComfortSpeed = kotlin.math.sqrt(2.0 * 1.0 * rawDistanceMeters)
+            minOf(kinematicSpeedMps, maxComfortSpeed)
         } else {
-            val baseProj = speedMps * config.maxFullProjectionAgeSeconds
+            kinematicSpeedMps
+        }
+
+        val rawProjected = if (ageSecondsDouble <= config.maxFullProjectionAgeSeconds) {
+            val base = proximitySpeedMps * ageSecondsDouble
+            val accelComp = 0.5 * kinematicAcceleration * (ageSecondsDouble * ageSecondsDouble)
+            (base + accelComp).coerceAtLeast(0.0)
+        } else {
+            val baseProj = proximitySpeedMps * config.maxFullProjectionAgeSeconds
             val extraSec = ageSecondsDouble - config.maxFullProjectionAgeSeconds
-            baseProj + (speedMps * extraSec * config.agedTailDecayFactor)
+            baseProj + (proximitySpeedMps * extraSec * config.agedTailDecayFactor)
         }
         val maxProjCap = if (allowAdaptiveExtendedProjection) config.maxProjectedDistanceMeters else Double.MAX_VALUE
         val projectedDistance = minOf(rawProjected, maxProjCap)
@@ -423,7 +455,8 @@ object PositionCompensationEngine {
         currentTimeMillis: Long = System.currentTimeMillis(),
         isDirectionValid: Boolean = true,
         isGpsTimestampFrozen: Boolean = false,
-        config: PositionCompensationConfig = PositionCompensationConfig.DEFAULT
+        config: PositionCompensationConfig = PositionCompensationConfig.DEFAULT,
+        historySamples: List<VehicleGpsSample> = emptyList()
     ): CompensationResult = calculateCompensation(
         rawDistanceMeters = rawDistanceMeters,
         speedKmH = speedKmH,
@@ -433,6 +466,69 @@ object PositionCompensationEngine {
         isDirectionValid = isDirectionValid,
         config = config,
         allowAdaptiveExtendedProjection = true,
-        isGpsTimestampFrozen = isGpsTimestampFrozen
+        isGpsTimestampFrozen = isGpsTimestampFrozen,
+        historySamples = historySamples
     )
+
+    /**
+     * Evaluates multi-sample kinematic velocity and acceleration:
+     * - 2 samples: Blends instantaneous speed (60%) and observed segment displacement velocity (40%).
+     * - 3+ samples: Adds acceleration trend with outlier rejection and physical clamping [-1.5, +1.0] m/s^2.
+     */
+    internal fun computeKinematicVelocityAndAcceleration(
+        instantSpeedMps: Double,
+        validHistory: List<VehicleGpsSample>
+    ): Pair<Double, Double> {
+        if (validHistory.size < 2) {
+            return instantSpeedMps to 0.0
+        }
+
+        if (validHistory.size == 2) {
+            val s0 = validHistory[0]
+            val s1 = validHistory[1]
+            val dt = (s1.timestampMillis - s0.timestampMillis) / 1000.0
+            val dd = s0.distanceMeters - s1.distanceMeters
+            if (dt in 1.0..90.0 && dd >= 0.0) {
+                val vObs = (dd / dt).coerceIn(0.0, 25.0)
+                val vBlend = 0.6 * instantSpeedMps + 0.4 * vObs
+                return vBlend to 0.0
+            }
+            return instantSpeedMps to 0.0
+        }
+
+        // 3+ samples: s0, s1, s2
+        val s0 = validHistory[validHistory.size - 3]
+        val s1 = validHistory[validHistory.size - 2]
+        val s2 = validHistory.last()
+
+        val dt1 = (s1.timestampMillis - s0.timestampMillis) / 1000.0
+        val dt2 = (s2.timestampMillis - s1.timestampMillis) / 1000.0
+
+        if (dt1 < 1.0 || dt2 < 1.0 || dt1 > 90.0 || dt2 > 90.0) {
+            return instantSpeedMps to 0.0
+        }
+
+        val dd1 = s0.distanceMeters - s1.distanceMeters
+        val dd2 = s1.distanceMeters - s2.distanceMeters
+
+        if (dd1 < 0.0 || dd2 < 0.0) {
+            // Out of order distance, fallback to instant
+            return instantSpeedMps to 0.0
+        }
+
+        val v1 = (dd1 / dt1).coerceIn(0.0, 25.0)
+        val v2 = (dd2 / dt2).coerceIn(0.0, 25.0)
+
+        // Outlier detection: sudden unphysical velocity surge (> 15 m/s jump)
+        if (kotlin.math.abs(v2 - v1) > 15.0) {
+            val vBlend = 0.6 * instantSpeedMps + 0.4 * v2
+            return vBlend to 0.0
+        }
+
+        val dtMid = 0.5 * (dt1 + dt2)
+        val aObs = ((v2 - v1) / dtMid).coerceIn(-1.5, 1.0)
+        val vBlend = 0.5 * instantSpeedMps + 0.5 * v2
+
+        return vBlend to aObs
+    }
 }

@@ -1,5 +1,6 @@
 package com.hcmcbustracker.feature.prediction
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
@@ -46,7 +48,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -59,6 +63,7 @@ import com.hcmcbustracker.core.designsystem.component.RouteBadge
 import com.hcmcbustracker.core.model.ArrivalVehicle
 import com.hcmcbustracker.core.model.Prediction
 import com.hcmcbustracker.core.model.PredictionFeedStatus
+import com.hcmcbustracker.feature.prediction.notification.BusTrackingForegroundService
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,6 +102,7 @@ fun StopPredictionScreen(
                             text = state.stop?.name ?: "Dự báo xe đến trạm",
                             style = MaterialTheme.typography.titleMedium,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             fontSize = 16.sp
                         )
                         state.stop?.fullAddress?.let {
@@ -104,7 +110,8 @@ fun StopPredictionScreen(
                                 text = it,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -341,6 +348,7 @@ fun PredictionRouteCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
+                val context = LocalContext.current
                 prediction.vehicles.forEachIndexed { index, vehicle ->
                     VehicleRow(
                         label = if (index == 0) "Xe sắp đến" else "Xe kế tiếp",
@@ -358,7 +366,21 @@ fun PredictionRouteCard(
                                     vehicle.etaSeconds
                                 )
                             }
-                        } else null
+                        } else null,
+                        onTrackVehicle = {
+                            BusTrackingForegroundService.startTracking(
+                                context = context,
+                                stopId = prediction.stopId,
+                                stopName = prediction.stopName ?: "Trạm dừng",
+                                routeNo = prediction.routeNo,
+                                plateNumber = vehicle.plateNumber
+                            )
+                            Toast.makeText(
+                                context,
+                                "Bắt đầu theo dõi xe ${vehicle.formattedPlate} đến trạm",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     )
                     if (index < prediction.vehicles.lastIndex) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -456,7 +478,8 @@ fun PredictionRouteCard(
 fun VehicleRow(
     label: String,
     vehicle: ArrivalVehicle,
-    onVehicleMapClick: (() -> Unit)? = null
+    onVehicleMapClick: (() -> Unit)? = null,
+    onTrackVehicle: (() -> Unit)? = null
 ) {
     Card(
         colors = CardDefaults.cardColors(
@@ -582,32 +605,67 @@ fun VehicleRow(
                 }
             }
 
-            if (onVehicleMapClick != null) {
+            if (onVehicleMapClick != null || onTrackVehicle != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onVehicleMapClick)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                            RoundedCornerShape(6.dp)
-                        )
-                        .padding(vertical = 6.dp, horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Place,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Xem vị trí xe trên bản đồ",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    if (onVehicleMapClick != null) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(onClick = onVehicleMapClick)
+                                .background(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(vertical = 7.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Xem bản đồ",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    if (onTrackVehicle != null) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(onClick = onTrackVehicle)
+                                .background(
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(vertical = 7.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.secondary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Theo dõi xe",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
                 }
             }
         }

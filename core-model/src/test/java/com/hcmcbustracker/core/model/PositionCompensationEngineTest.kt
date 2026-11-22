@@ -298,7 +298,16 @@ class PositionCompensationEngineTest {
         assertEquals(804.0, at160.projectedDistanceMeters, 0.5)
         assertEquals(862.8, at188.projectedDistanceMeters, 0.5)
         assertTrue(at140.isAdaptiveAgedProjection)
-        assertEquals(GpsLatencyCategory.STALE, at140.latencyCategory)
+        assertEquals(GpsLatencyCategory.DELAYED, at140.latencyCategory)
+
+        val at305 = PositionCompensationEngine.calculateAdaptiveCompensation(
+            rawDistanceMeters = 2000.0,
+            speedKmH = speedKmH,
+            timestampIso = baseIso,
+            responseReceivedAtMillis = baseTimeMillis + 305_000L,
+            currentTimeMillis = baseTimeMillis + 305_000L
+        )
+        assertEquals(GpsLatencyCategory.STALE, at305.latencyCategory)
 
         // Higher speed still strictly capped at maxProjectedDistanceMeters (900m)
         val fastAt188 = PositionCompensationEngine.calculateAdaptiveCompensation(
@@ -341,15 +350,17 @@ class PositionCompensationEngineTest {
     }
 
     @Test
-    fun classifyGpsLatency_matchesPhase11Thresholds() {
+    fun classifyGpsLatency_matchesUnifiedPhase3Thresholds() {
         assertEquals(GpsLatencyCategory.FRESH, PositionCompensationEngine.classifyGpsLatency(0))
         assertEquals(GpsLatencyCategory.FRESH, PositionCompensationEngine.classifyGpsLatency(30))
-        assertEquals(GpsLatencyCategory.SLIGHT_DELAY, PositionCompensationEngine.classifyGpsLatency(31))
-        assertEquals(GpsLatencyCategory.SLIGHT_DELAY, PositionCompensationEngine.classifyGpsLatency(60))
-        assertEquals(GpsLatencyCategory.DELAYED, PositionCompensationEngine.classifyGpsLatency(61))
-        assertEquals(GpsLatencyCategory.DELAYED, PositionCompensationEngine.classifyGpsLatency(120))
-        assertEquals(GpsLatencyCategory.STALE, PositionCompensationEngine.classifyGpsLatency(121))
-        assertEquals(GpsLatencyCategory.STALE, PositionCompensationEngine.classifyGpsLatency(188))
+        assertEquals(GpsLatencyCategory.FRESH, PositionCompensationEngine.classifyGpsLatency(60))
+        assertEquals(GpsLatencyCategory.SLIGHT_DELAY, PositionCompensationEngine.classifyGpsLatency(61))
+        assertEquals(GpsLatencyCategory.SLIGHT_DELAY, PositionCompensationEngine.classifyGpsLatency(120))
+        assertEquals(GpsLatencyCategory.DELAYED, PositionCompensationEngine.classifyGpsLatency(121))
+        assertEquals(GpsLatencyCategory.DELAYED, PositionCompensationEngine.classifyGpsLatency(180))
+        assertEquals(GpsLatencyCategory.DELAYED, PositionCompensationEngine.classifyGpsLatency(181))
+        assertEquals(GpsLatencyCategory.DELAYED, PositionCompensationEngine.classifyGpsLatency(300))
+        assertEquals(GpsLatencyCategory.STALE, PositionCompensationEngine.classifyGpsLatency(301))
         assertEquals(GpsLatencyCategory.UNKNOWN, PositionCompensationEngine.classifyGpsLatency(-1))
     }
 
@@ -383,5 +394,81 @@ class PositionCompensationEngineTest {
             VehicleArrivalStatus.UNKNOWN,
             PositionCompensationEngine.evaluateArrivalStatus(50.0, 20.0, 10, 10L, isDirectionValid = false)
         )
+    }
+
+    @Test
+    fun compensation_twoSampleKinematics_computesEffectiveVelocity() {
+        val t0 = baseTimeMillis
+        val t1 = baseTimeMillis + 15_000L
+        val tNow = baseTimeMillis + 30_000L
+
+        // Vehicle moved 150m in 15s between sample 0 and sample 1 -> 10 m/s
+        val samples = listOf(
+            VehicleGpsSample(timestampMillis = t0, distanceMeters = 1150.0, speedKmH = 36.0),
+            VehicleGpsSample(timestampMillis = t1, distanceMeters = 1000.0, speedKmH = 36.0)
+        )
+
+        val result = PositionCompensationEngine.calculateCompensation(
+            rawDistanceMeters = 1000.0,
+            speedKmH = 36.0,
+            timestampIso = Instant.ofEpochMilli(t1).toString(),
+            responseReceivedAtMillis = tNow,
+            currentTimeMillis = tNow,
+            historySamples = samples
+        )
+
+        assertEquals(CompensationStatus.LIVE_PROJECTED, result.status)
+        assertEquals(15L, result.gpsAgeSeconds) // tNow - t1 = 15s
+        // 10 m/s * 15s = 150m projected
+        assertEquals(150.0, result.projectedDistanceMeters, 2.0)
+        assertEquals(850.0, result.effectiveDistanceMeters, 2.0)
+    }
+
+    @Test
+    fun compensation_threeSampleKinematics_clampsAcceleration() {
+        val t0 = baseTimeMillis
+        val t1 = baseTimeMillis + 10_000L
+        val t2 = baseTimeMillis + 20_000L
+        val tNow = baseTimeMillis + 30_000L
+
+        // Accelerating vehicle samples
+        val samples = listOf(
+            VehicleGpsSample(timestampMillis = t0, distanceMeters = 1500.0, speedKmH = 18.0),
+            VehicleGpsSample(timestampMillis = t1, distanceMeters = 1350.0, speedKmH = 28.8),
+            VehicleGpsSample(timestampMillis = t2, distanceMeters = 1150.0, speedKmH = 36.0)
+        )
+
+        val result = PositionCompensationEngine.calculateCompensation(
+            rawDistanceMeters = 1150.0,
+            speedKmH = 36.0,
+            timestampIso = Instant.ofEpochMilli(t2).toString(),
+            responseReceivedAtMillis = tNow,
+            currentTimeMillis = tNow,
+            historySamples = samples
+        )
+
+        assertTrue(result.projectedDistanceMeters > 0.0)
+        assertTrue(result.effectiveDistanceMeters < 1150.0)
+    }
+
+    @Test
+    fun compensation_stopProximityDecelerationEnvelope_slowsVehicleAsItApproachesStop() {
+        val t0 = baseTimeMillis
+        val tNow = baseTimeMillis + 15_000L
+
+        // Vehicle is 100m away traveling at 54 km/h (15 m/s)
+        // Deceleration envelope should restrict speed to sqrt(2 * 1.5 * 100) = 17.32 m/s max,
+        // but if distance is 20m, max speed is sqrt(2 * 1.5 * 20) = 7.74 m/s.
+        val resultNear = PositionCompensationEngine.calculateCompensation(
+            rawDistanceMeters = 20.0,
+            speedKmH = 54.0, // 15 m/s reported by telemetry
+            timestampIso = baseIso,
+            responseReceivedAtMillis = tNow,
+            currentTimeMillis = tNow
+        )
+
+        // Vehicle should safely transition to AT_STOP without negative jump
+        assertTrue(resultNear.effectiveDistanceMeters >= 0.0)
+        assertTrue(resultNear.projectedDistanceMeters <= 20.0)
     }
 }

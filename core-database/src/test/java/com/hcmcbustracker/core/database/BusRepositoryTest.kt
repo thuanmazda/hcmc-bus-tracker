@@ -7,6 +7,8 @@ import com.hcmcbustracker.core.database.entity.RouteEntity
 import com.hcmcbustracker.core.database.entity.RoutePathEntity
 import com.hcmcbustracker.core.database.repository.BusRepositoryImpl
 import com.hcmcbustracker.core.model.AppThemeMode
+import com.hcmcbustracker.core.model.SearchHistoryItem
+import com.hcmcbustracker.core.model.SearchHistoryType
 import com.hcmcbustracker.core.network.api.EbmsApiService
 import com.hcmcbustracker.core.network.dto.RouteComboDto
 import com.hcmcbustracker.core.network.dto.StopAutocompleteDto
@@ -176,5 +178,67 @@ class BusRepositoryTest {
 
         val afterClear = database.routePathDao().getPathOnce("1_1")
         assertEquals(null, afterClear)
+    }
+
+    @Test
+    fun searchHistory_add_remove_clear_and_deduplicate() = runTest {
+        assertTrue(repository.getSearchHistory().first().isEmpty())
+
+        repository.addSearchHistory("01", SearchHistoryType.ROUTE)
+        repository.addSearchHistory("Bến Thành", SearchHistoryType.STOP)
+        repository.addSearchHistory("50E-616.63", SearchHistoryType.PLATE)
+
+        var history = repository.getSearchHistory().first()
+        assertEquals(3, history.size)
+        // Most recent should be first
+        assertEquals("50E-616.63", history[0].query)
+        assertEquals(SearchHistoryType.PLATE, history[0].type)
+        assertEquals("Bến Thành", history[1].query)
+        assertEquals("01", history[2].query)
+
+        // Adding duplicate query moves it to top
+        repository.addSearchHistory("01", SearchHistoryType.ROUTE)
+        history = repository.getSearchHistory().first()
+        assertEquals(3, history.size)
+        assertEquals("01", history[0].query)
+
+        // Remove single item
+        repository.removeSearchHistoryItem("Bến Thành")
+        history = repository.getSearchHistory().first()
+        assertEquals(2, history.size)
+        assertTrue(history.none { it.query == "Bến Thành" })
+
+        // Clear all
+        repository.clearSearchHistory()
+        history = repository.getSearchHistory().first()
+        assertTrue(history.isEmpty())
+    }
+
+    @Test
+    fun searchHistory_persistsAndRestores() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        repository.addSearchHistory("D4", SearchHistoryType.ROUTE)
+        repository.addSearchHistory("51B-12345", SearchHistoryType.PLATE)
+
+        // Recreate repository from same context (simulating app restart)
+        val restoredRepo = BusRepositoryImpl(database, apiService, json, context)
+        val history = restoredRepo.getSearchHistory().first()
+        assertEquals(2, history.size)
+        assertEquals("51B-12345", history[0].query)
+        assertEquals("D4", history[1].query)
+    }
+
+    @Test
+    fun stopNotification_toggleMute() = runTest {
+        val initialPrefs = repository.getUserPreferences().first()
+        assertTrue(initialPrefs.disabledStopNotificationIds.isEmpty())
+
+        repository.toggleStopNotification(142, enabled = false)
+        var prefs = repository.getUserPreferences().first()
+        assertTrue(prefs.disabledStopNotificationIds.contains(142))
+
+        repository.toggleStopNotification(142, enabled = true)
+        prefs = repository.getUserPreferences().first()
+        assertEquals(false, prefs.disabledStopNotificationIds.contains(142))
     }
 }

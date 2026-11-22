@@ -2,12 +2,14 @@ package com.hcmcbustracker.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
@@ -25,6 +27,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -196,6 +199,18 @@ fun BusTrackerAppNavHost() {
                 },
                 onStopSelected = { stopId ->
                     navController.navigate("stop_prediction/$stopId")
+                },
+                onVehicleSelected = { vehicle ->
+                    val encodedDts = if (!vehicle.gpsTimestampIso.isNullOrBlank()) {
+                        try {
+                            java.net.URLEncoder.encode(vehicle.gpsTimestampIso, "UTF-8")
+                        } catch (_: Exception) {
+                            vehicle.gpsTimestampIso
+                        }
+                    } else ""
+                    navController.navigate(
+                        "interactive_map?routeId=${vehicle.routeId}&varId=${vehicle.varId}&stopId=${vehicle.checkpointStopId}&plate=${vehicle.plateNumber}&distance=${vehicle.distanceMeters}&speed=${vehicle.speedKmH}&dts=$encodedDts&eta=${vehicle.etaSeconds}"
+                    )
                 }
             )
         }
@@ -251,9 +266,9 @@ fun BusTrackerAppNavHost() {
 }
 
 enum class NavigationTab(val label: String) {
+    HOME("Trang chủ"),
     MAP("Bản đồ"),
     ROUTES("Tuyến xe"),
-    STOPS("Trạm dừng"),
     PERSONAL("Cá nhân")
 }
 
@@ -264,71 +279,113 @@ fun MainTabsShell(
     onNavigateToSearch: () -> Unit,
     onNavigateToMap: () -> Unit
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(NavigationTab.HOME.ordinal) }
+
+    // Android Back handler: if not on Home tab, return to Home first before exiting
+    BackHandler(enabled = selectedTab != NavigationTab.HOME.ordinal) {
+        selectedTab = NavigationTab.HOME.ordinal
+    }
+
+    val homeViewModel: HomeViewModel = hiltViewModel()
+    val mapViewModel: MapViewModel = hiltViewModel()
+    val routesViewModel: RoutesViewModel = hiltViewModel()
+    val personalViewModel: PersonalViewModel = hiltViewModel()
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                NavigationBarItem(
+                    selected = selectedTab == NavigationTab.HOME.ordinal,
+                    onClick = { selectedTab = NavigationTab.HOME.ordinal },
+                    icon = { Icon(Icons.Default.Home, contentDescription = "Trang chủ") },
+                    label = {
+                        Text(
+                            text = "Trang chủ",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (selectedTab == NavigationTab.HOME.ordinal) FontWeight.Bold else FontWeight.Medium
+                            )
+                        )
+                    }
+                )
                 NavigationBarItem(
                     selected = selectedTab == NavigationTab.MAP.ordinal,
                     onClick = { selectedTab = NavigationTab.MAP.ordinal },
                     icon = { Icon(Icons.Default.Map, contentDescription = "Bản đồ") },
-                    label = { Text("Bản đồ") }
+                    label = {
+                        Text(
+                            text = "Bản đồ",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (selectedTab == NavigationTab.MAP.ordinal) FontWeight.Bold else FontWeight.Medium
+                            )
+                        )
+                    }
                 )
                 NavigationBarItem(
                     selected = selectedTab == NavigationTab.ROUTES.ordinal,
                     onClick = { selectedTab = NavigationTab.ROUTES.ordinal },
                     icon = { Icon(Icons.Default.DirectionsBus, contentDescription = "Tuyến xe") },
-                    label = { Text("Tuyến xe") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == NavigationTab.STOPS.ordinal,
-                    onClick = { selectedTab = NavigationTab.STOPS.ordinal },
-                    icon = { Icon(Icons.Default.Place, contentDescription = "Trạm dừng") },
-                    label = { Text("Trạm dừng") }
+                    label = {
+                        Text(
+                            text = "Tuyến xe",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (selectedTab == NavigationTab.ROUTES.ordinal) FontWeight.Bold else FontWeight.Medium
+                            )
+                        )
+                    }
                 )
                 NavigationBarItem(
                     selected = selectedTab == NavigationTab.PERSONAL.ordinal,
                     onClick = { selectedTab = NavigationTab.PERSONAL.ordinal },
                     icon = { Icon(Icons.Default.Person, contentDescription = "Cá nhân") },
-                    label = { Text("Cá nhân") }
+                    label = {
+                        Text(
+                            text = "Cá nhân",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (selectedTab == NavigationTab.PERSONAL.ordinal) FontWeight.Bold else FontWeight.Medium
+                            )
+                        )
+                    }
                 )
             }
         }
     ) { padding ->
         when (selectedTab) {
-            NavigationTab.MAP.ordinal -> {
-                val homeViewModel: HomeViewModel = hiltViewModel()
+            NavigationTab.HOME.ordinal -> {
                 HomeScreen(
                     viewModel = homeViewModel,
                     onNavigateToSearch = onNavigateToSearch,
-                    onNavigateToMap = onNavigateToMap,
+                    onNavigateToMap = { selectedTab = NavigationTab.MAP.ordinal },
+                    onNavigateToRoutes = { selectedTab = NavigationTab.ROUTES.ordinal },
+                    onNavigateToPlateSearch = onNavigateToSearch,
                     onRouteSelected = onRouteSelected,
                     onStopSelected = onStopSelected,
                     onQuickPredictionClick = {
-                        selectedTab = NavigationTab.STOPS.ordinal
+                        if (homeViewModel.uiState.value.favoriteStops.isNotEmpty()) {
+                            homeViewModel.refreshFavoriteEta()
+                        } else {
+                            onNavigateToSearch()
+                        }
                     },
                     modifier = Modifier.padding(padding)
                 )
             }
+            NavigationTab.MAP.ordinal -> {
+                MapScreen(
+                    viewModel = mapViewModel,
+                    onStopClicked = onStopSelected,
+                    modifier = Modifier.padding(padding)
+                )
+            }
             NavigationTab.ROUTES.ordinal -> {
-                val routesViewModel: RoutesViewModel = hiltViewModel()
                 RoutesScreen(
                     viewModel = routesViewModel,
                     onRouteSelected = onRouteSelected,
                     modifier = Modifier.padding(padding)
                 )
             }
-            NavigationTab.STOPS.ordinal -> {
-                val stopsViewModel: StopsViewModel = hiltViewModel()
-                StopsScreen(
-                    viewModel = stopsViewModel,
-                    onStopSelected = onStopSelected,
-                    modifier = Modifier.padding(padding)
-                )
-            }
             NavigationTab.PERSONAL.ordinal -> {
-                val personalViewModel: PersonalViewModel = hiltViewModel()
                 PersonalScreen(
                     viewModel = personalViewModel,
                     onStopSelected = onStopSelected,

@@ -9,6 +9,7 @@ import com.hcmcbustracker.core.model.RoutePath
 import com.hcmcbustracker.core.model.RouteVariant
 import com.hcmcbustracker.feature.map.tile.TileProvider
 import com.hcmcbustracker.feature.map.tile.TileProviderManager
+import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -82,8 +83,14 @@ class MapViewModelTest {
 
     @After
     fun tearDown() {
-        viewModel.onMapPaused()
-        Dispatchers.resetMain()
+        try {
+            if (this::viewModel.isInitialized) {
+                viewModel.onMapPaused()
+            }
+        } finally {
+            clearMocks(repository)
+            Dispatchers.resetMain()
+        }
     }
 
     @Test
@@ -889,5 +896,109 @@ class MapViewModelTest {
 
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `onMapPaused is idempotent and calling multiple times does not crash`() = runTest {
+        viewModel.onMapPaused()
+        assertFalse(viewModel.isForegroundActive)
+        assertFalse(viewModel.isPollingActive)
+
+        viewModel.onMapPaused()
+        assertFalse(viewModel.isForegroundActive)
+        assertFalse(viewModel.isPollingActive)
+    }
+
+    @Test
+    fun `onMapResumed is idempotent and does not create duplicate jobs`() = runTest {
+        viewModel.onMapResumed()
+        assertTrue(viewModel.isForegroundActive)
+
+        // Load a route variant
+        viewModel.loadRoute(1, 101)
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(viewModel.isPollingActive)
+
+        // Calling onMapResumed again while active must not create duplicate jobs
+        viewModel.onMapResumed()
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(viewModel.isPollingActive)
+
+        // Cleanup
+        viewModel.onMapPaused()
+        assertFalse(viewModel.isPollingActive)
+    }
+
+    @Test
+    fun `tab switch lifecycle pauses polling on leave and restores polling on enter`() = runTest {
+        // 1. Enter Map Tab: resume map and select route
+        viewModel.onMapResumed()
+        viewModel.loadRoute(1, 101)
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(viewModel.isPollingActive)
+        assertTrue(viewModel.isForegroundActive)
+
+        // 2. Switch to Home Tab: MapScreen disposed -> onMapPaused
+        viewModel.onMapPaused()
+        testDispatcher.scheduler.runCurrent()
+        assertFalse(viewModel.isPollingActive)
+        assertFalse(viewModel.isForegroundActive)
+
+        // 3. Switch to Personal Tab: Map remains unmounted, polling remains stopped
+        assertFalse(viewModel.isPollingActive)
+
+        // 4. Switch back to Map Tab: MapScreen composed -> onMapResumed
+        viewModel.onMapResumed()
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(viewModel.isPollingActive)
+        assertTrue(viewModel.isForegroundActive)
+
+        // Cleanup
+        viewModel.onMapPaused()
+    }
+
+    @Test
+    fun `rapid tab switching does not produce duplicate polling jobs or crashes`() = runTest {
+        viewModel.onMapResumed()
+        viewModel.loadRoute(1, 101)
+        testDispatcher.scheduler.runCurrent()
+
+        // Simulate 10 rapid tab switches between Map and other tabs
+        repeat(10) {
+            viewModel.onMapPaused()
+            testDispatcher.scheduler.runCurrent()
+            assertFalse(viewModel.isPollingActive)
+            viewModel.onMapResumed()
+            testDispatcher.scheduler.runCurrent()
+            assertTrue(viewModel.isPollingActive)
+        }
+
+        // Final pause
+        viewModel.onMapPaused()
+        testDispatcher.scheduler.runCurrent()
+        assertFalse(viewModel.isPollingActive)
+    }
+
+    @Test
+    fun `activity lifecycle ON_PAUSE stops polling and ON_RESUME restores polling`() = runTest {
+        viewModel.onMapResumed()
+        viewModel.loadRoute(1, 101)
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(viewModel.isPollingActive)
+
+        // Activity goes to background (ON_PAUSE)
+        viewModel.onMapPaused()
+        testDispatcher.scheduler.runCurrent()
+        assertFalse(viewModel.isPollingActive)
+        assertFalse(viewModel.isForegroundActive)
+
+        // Activity returns to foreground (ON_RESUME)
+        viewModel.onMapResumed()
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(viewModel.isPollingActive)
+        assertTrue(viewModel.isForegroundActive)
+
+        // Cleanup
+        viewModel.onMapPaused()
     }
 }

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hcmcbustracker.core.designsystem.theme.HcmcBusTrackerTheme
 import com.hcmcbustracker.core.designsystem.theme.OrangeAccent
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
 
 @Composable
 fun OfflineBanner(
@@ -63,13 +64,13 @@ fun OfflineBanner(
             modifier = modifier
                 .fillMaxWidth()
                 .background(backgroundColor)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = TransitDimens.SpacingBase, vertical = TransitDimens.SpacingSm),
             contentAlignment = Alignment.CenterStart
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isSyncing) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(TransitDimens.IconSm),
                         strokeWidth = 2.dp,
                         color = contentColor
                     )
@@ -78,17 +79,16 @@ fun OfflineBanner(
                         imageVector = Icons.Default.WifiOff,
                         contentDescription = null,
                         tint = contentColor,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(TransitDimens.IconSm)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(TransitDimens.SpacingMd))
 
                 Text(
                     text = text,
                     style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp
+                        fontWeight = FontWeight.SemiBold
                     ),
                     color = contentColor
                 )

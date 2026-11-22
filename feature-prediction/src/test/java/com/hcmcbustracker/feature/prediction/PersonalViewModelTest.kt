@@ -65,6 +65,7 @@ class PersonalViewModelTest {
         Dispatchers.setMain(testDispatcher)
         every { repository.getFavoriteStops() } returns flowOf(sampleFavorites)
         every { repository.getFavoriteRoutes() } returns flowOf(sampleFavoriteRoutes)
+        every { repository.getSearchHistory() } returns flowOf(emptyList())
         every { repository.getUserPreferences() } returns flowOf(UserPreferences())
         coEvery { repository.getLastSyncTimestamp("ROUTES") } returns 1700000000L
 
@@ -227,5 +228,23 @@ class PersonalViewModelTest {
             assertEquals("Dữ liệu tải về không vượt qua kiểm tra toàn vẹn", state.errorMessage)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `search history actions call repository`() = runTest {
+        viewModel.removeSearchHistoryItem("01")
+        viewModel.clearSearchHistory()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { repository.removeSearchHistoryItem("01") }
+        coVerify { repository.clearSearchHistory() }
+    }
+
+    @Test
+    fun `toggleStopNotification calls repository`() = runTest {
+        viewModel.toggleStopNotification(142, enabled = false)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { repository.toggleStopNotification(142, false) }
     }
 }

@@ -1,6 +1,6 @@
 package com.hcmcbustracker.core.designsystem.component
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -24,63 +25,73 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.hcmcbustracker.core.designsystem.theme.CardShape
 import com.hcmcbustracker.core.designsystem.theme.HcmcBusTrackerTheme
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
+import com.hcmcbustracker.core.designsystem.theme.borderSubtle
 
+/**
+ * Modern search input field styled after Apple Maps search bars.
+ * Features crisp hairline borders, high touch target accessibility, and trailing action slots.
+ */
 @Composable
 fun BusSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Tìm số tuyến, tên tuyến, trạm dừng...",
+    placeholder: String = "Tìm số tuyến, trạm dừng, biển số xe...",
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
     onClearClick: (() -> Unit)? = { onQueryChange("") },
+    onSearch: ((String) -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null
 ) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(TransitDimens.SearchBarHeight)
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick)
                 else Modifier
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = CardShape,
         color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 2.dp
+        border = BorderStroke(
+            width = TransitDimens.CardBorderWidth,
+            color = MaterialTheme.colorScheme.borderSubtle
+        ),
+        tonalElevation = TransitDimens.ElevationLow
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = TransitDimens.SpacingBase),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = "Tìm kiếm",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(TransitDimens.IconMd)
             )
 
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(TransitDimens.SpacingMd))
 
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = TransitDimens.SpacingXs),
                 contentAlignment = Alignment.CenterStart
             ) {
                 if (query.isEmpty()) {
                     Text(
                         text = placeholder,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            fontSize = 15.sp
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         ),
                         maxLines = 1
                     )
@@ -93,24 +104,35 @@ fun BusSearchBar(
                         enabled = enabled,
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 15.sp
+                            color = MaterialTheme.colorScheme.onSurface
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = {}),
+                        keyboardActions = KeyboardActions(onSearch = { onSearch?.invoke(query) }),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
 
             if (query.isNotEmpty() && onClearClick != null) {
-                IconButton(onClick = onClearClick) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Xóa nội dung",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                IconButton(
+                    onClick = onClearClick,
+                    modifier = Modifier.size(TransitDimens.IconXl)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(TransitDimens.RadiusPill),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f),
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Xóa nội dung",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
                 }
             } else if (trailingContent != null) {
                 trailingContent()

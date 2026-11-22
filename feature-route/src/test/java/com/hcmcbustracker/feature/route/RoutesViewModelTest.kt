@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -30,18 +31,29 @@ class RoutesViewModelTest {
 
     private val sampleRoutes = listOf(
         Route(
-            id = 1,
-            routeNo = "01",
-            name = "Bến Thành - Bến xe Chợ Lớn",
-            outBoundDesc = "Bến xe buýt Sài Gòn - Chợ Lớn",
-            inBoundDesc = "Chợ Lớn - Bến xe buýt Sài Gòn"
+            id = 4,
+            routeNo = "D4",
+            name = "Vinhomes Grand Park - Bến xe buýt Sài Gòn",
+            type = "Phổ thông - Có trợ giá",
+            orgs = "VinBus"
         ),
         Route(
             id = 150,
             routeNo = "150",
             name = "Bến xe Chợ Lớn - Ngã 3 Tân Vạn",
-            outBoundDesc = "Chợ Lớn - Tân Vạn",
-            inBoundDesc = "Tân Vạn - Chợ Lớn"
+            type = "Phổ thông - Có trợ giá"
+        ),
+        Route(
+            id = 1,
+            routeNo = "01",
+            name = "Bến Thành - Bến xe Chợ Lớn",
+            type = "Phổ thông - Có trợ giá"
+        ),
+        Route(
+            id = 72,
+            routeNo = "72-1",
+            name = "Sân bay Tân Sơn Nhất - Bến xe Vũng Tàu",
+            type = "Phổ thông - Không trợ giá"
         )
     )
 
@@ -51,7 +63,7 @@ class RoutesViewModelTest {
         every { repository.getAllRoutes() } returns flowOf(sampleRoutes)
         every { repository.getFavoriteRoutes() } returns flowOf(emptyList())
         every { repository.searchRoutes("150") } returns flowOf(listOf(sampleRoutes[1]))
-        coEvery { repository.getRouteCount() } returns 2
+        coEvery { repository.getRouteCount() } returns 4
 
         viewModel = RoutesViewModel(repository)
     }
@@ -62,7 +74,7 @@ class RoutesViewModelTest {
     }
 
     @Test
-    fun `loads all routes on initial state`() = runTest {
+    fun `loads all routes in natural sorted order where D4 does not precede 01 and 150`() = runTest {
         viewModel.uiState.test {
             testDispatcher.scheduler.advanceTimeBy(350)
             testDispatcher.scheduler.advanceUntilIdle()
@@ -70,8 +82,66 @@ class RoutesViewModelTest {
             if (state.routes.isEmpty()) {
                 state = awaitItem()
             }
-            assertEquals(2, state.routes.size)
+            assertEquals(4, state.routes.size)
+            // Natural sort order: "01", "150", "72-1", "D4"
             assertEquals("01", state.routes[0].routeNo)
+            assertEquals("150", state.routes[1].routeNo)
+            assertEquals("72-1", state.routes[2].routeNo)
+            assertEquals("D4", state.routes[3].routeNo)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `filter by SUBSIDIZED retains only subsidized routes`() = runTest {
+        viewModel.uiState.test {
+            testDispatcher.scheduler.advanceTimeBy(350)
+            testDispatcher.scheduler.advanceUntilIdle()
+            awaitItem() // Initial
+
+            viewModel.onFilterSelected(RouteFilterType.SUBSIDIZED)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val state = expectMostRecentItem()
+            assertEquals(RouteFilterType.SUBSIDIZED, state.selectedFilter)
+            assertEquals(3, state.routes.size)
+            assertTrue(state.routes.all { it.type?.contains("Có trợ giá") == true })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `filter by NON_SUBSIDIZED retains only non-subsidized routes`() = runTest {
+        viewModel.uiState.test {
+            testDispatcher.scheduler.advanceTimeBy(350)
+            testDispatcher.scheduler.advanceUntilIdle()
+            awaitItem()
+
+            viewModel.onFilterSelected(RouteFilterType.NON_SUBSIDIZED)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val state = expectMostRecentItem()
+            assertEquals(RouteFilterType.NON_SUBSIDIZED, state.selectedFilter)
+            assertEquals(1, state.routes.size)
+            assertEquals("72-1", state.routes[0].routeNo)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `filter by ELECTRIC retains VinBus and electric bus routes`() = runTest {
+        viewModel.uiState.test {
+            testDispatcher.scheduler.advanceTimeBy(350)
+            testDispatcher.scheduler.advanceUntilIdle()
+            awaitItem()
+
+            viewModel.onFilterSelected(RouteFilterType.ELECTRIC)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val state = expectMostRecentItem()
+            assertEquals(RouteFilterType.ELECTRIC, state.selectedFilter)
+            assertEquals(1, state.routes.size)
+            assertEquals("D4", state.routes[0].routeNo)
             cancelAndIgnoreRemainingEvents()
         }
     }

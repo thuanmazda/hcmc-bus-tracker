@@ -231,6 +231,36 @@ class PredictionViewModel @Inject constructor(
 
             val hasVehicles = mergedResult.first.any { it.vehicles.isNotEmpty() }
             if (hasVehicles) {
+                // Register observed vehicles into ActiveFleetRegistry for license plate search
+                for (pred in mergedResult.first) {
+                    for (veh in pred.vehicles) {
+                        val parsedGps = com.hcmcbustracker.core.model.PositionCompensationEngine.parseGpsTimestampMillis(veh.timestampIso)
+                        val telemetry = com.hcmcbustracker.core.model.RouteVehicleTelemetry(
+                            routeId = pred.routeId,
+                            varId = pred.varId ?: 1,
+                            plateNumber = veh.plateNumber,
+                            formattedPlate = veh.formattedPlate,
+                            checkpointStopId = stopId,
+                            checkpointStopName = pred.stopName.orEmpty(),
+                            rawDistanceMeters = veh.distanceMeters,
+                            speedKmH = veh.speedKmH,
+                            etaSeconds = veh.etaSeconds,
+                            gpsTimestampIso = veh.timestampIso.orEmpty(),
+                            gpsTimestampMillis = parsedGps,
+                            requestStartedAtMillis = System.currentTimeMillis() - 100,
+                            responseReceivedAtMillis = System.currentTimeMillis(),
+                            predictionReceivedAtMillis = System.currentTimeMillis(),
+                            statusCode = veh.status ?: 0
+                        )
+                        com.hcmcbustracker.core.model.ActiveFleetRegistry.recordVehicle(
+                            telemetry = telemetry,
+                            routeNo = pred.routeNo,
+                            routeName = pred.routeName,
+                            directionName = pred.destinationName ?: ""
+                        )
+                    }
+                }
+
                 val allVehicles = mergedResult.first.flatMap { it.vehicles }
                 val allStaleGps = allVehicles.all { it.isGpsStale() }
                 _status.value = if (allStaleGps) {

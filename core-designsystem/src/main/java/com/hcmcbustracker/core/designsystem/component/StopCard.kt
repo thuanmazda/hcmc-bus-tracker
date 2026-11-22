@@ -1,5 +1,6 @@
 package com.hcmcbustracker.core.designsystem.component
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -30,13 +31,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.hcmcbustracker.core.designsystem.theme.CardShape
 import com.hcmcbustracker.core.designsystem.theme.HcmcBusTrackerTheme
 import com.hcmcbustracker.core.designsystem.theme.OrangeAccent
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
+import com.hcmcbustracker.core.designsystem.theme.borderSubtle
 import com.hcmcbustracker.core.model.BusStop
 
+/**
+ * Standard bus stop card.
+ * Modernized with Apple HIG subtle hairline borders, crisp typography, and touch target accessibility.
+ */
 @Composable
 fun StopCard(
     stop: BusStop,
@@ -49,19 +57,23 @@ fun StopCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = CardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
+        border = BorderStroke(
+            width = TransitDimens.CardBorderWidth,
+            color = MaterialTheme.colorScheme.borderSubtle
+        ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.5.dp,
-            pressedElevation = 4.dp
+            defaultElevation = TransitDimens.ElevationLow,
+            pressedElevation = TransitDimens.ElevationMedium
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp)
+                .padding(TransitDimens.SpacingBase)
         ) {
             // Top Row: Pin Icon, Stop Name, Code, and Favorite Toggle
             Row(
@@ -69,7 +81,7 @@ fun StopCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(TransitDimens.RadiusMd),
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.size(36.dp)
                 ) {
@@ -78,21 +90,21 @@ fun StopCard(
                             imageVector = Icons.Default.Place,
                             contentDescription = "Trạm dừng",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(TransitDimens.IconMd)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(TransitDimens.SpacingMd))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(TransitDimens.SpacingXs)
                     ) {
                         if (stop.code.isNotBlank()) {
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(TransitDimens.RadiusXs),
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Text(
@@ -101,7 +113,7 @@ fun StopCard(
                                         fontWeight = FontWeight.Bold
                                     ),
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = TransitDimens.SpacingSm, vertical = TransitDimens.Spacing2xs)
                                 )
                             }
                         }
@@ -109,22 +121,24 @@ fun StopCard(
                         Text(
                             text = stop.name,
                             style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp
+                                fontWeight = FontWeight.SemiBold
                             ),
                             color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(TransitDimens.SpacingXs))
 
                     if (stop.fullAddress.isNotBlank()) {
                         Text(
                             text = stop.fullAddress,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -132,13 +146,13 @@ fun StopCard(
                 if (onFavoriteToggle != null) {
                     IconButton(
                         onClick = onFavoriteToggle,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(TransitDimens.MinTouchTargetSize)
                     ) {
                         Icon(
                             imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             contentDescription = if (isFavorite) "Bỏ lưu trạm" else "Lưu trạm yêu thích",
                             tint = if (isFavorite) OrangeAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(TransitDimens.IconMd)
                         )
                     }
                 }
@@ -146,19 +160,19 @@ fun StopCard(
 
             // Passing Routes Row
             if (stop.routes.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(TransitDimens.SpacingMd))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(TransitDimens.SpacingXs),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "Tuyến:",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(end = 2.dp)
+                        modifier = Modifier.padding(end = TransitDimens.Spacing2xs)
                     )
                     stop.routes.forEach { routeNo ->
                         RouteBadge(

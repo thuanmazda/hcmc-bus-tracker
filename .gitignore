@@ -51,12 +51,17 @@ docs/screenshots/*.xml
 Thumbs.db
 
 # Documentation & Markdown Policy (Phase 16)
-# Only root README.md and the public verification audit report are tracked on GitHub.
+# Only root README.md, SECURITY.md and the public verification audit report are tracked on GitHub.
 # All internal markdown reports, phase audits, research docs remain local only.
 *.md
 */**/*.md
 !/README.md
+!/SECURITY.md
 !/SECURITY_AND_PRIVACY_AUDIT.md
+
+# Local QA and Release Candidate artifacts
+phase-*-qa/
+release-candidate/
 
 # Internal security reports & research directories
 docs/security/

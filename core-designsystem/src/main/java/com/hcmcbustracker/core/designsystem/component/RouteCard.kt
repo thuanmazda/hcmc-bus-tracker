@@ -1,5 +1,6 @@
 package com.hcmcbustracker.core.designsystem.component
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,7 +19,6 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -30,12 +31,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.hcmcbustracker.core.designsystem.theme.CardShape
 import com.hcmcbustracker.core.designsystem.theme.HcmcBusTrackerTheme
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
+import com.hcmcbustracker.core.designsystem.theme.borderSubtle
 import com.hcmcbustracker.core.model.Route
 
+/**
+ * Standard transit route card.
+ * Modernized with Apple HIG subtle hairline borders, crisp typography, and touch target accessibility.
+ */
 @Composable
 fun RouteCard(
     route: Route,
@@ -48,19 +56,23 @@ fun RouteCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = CardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
+        border = BorderStroke(
+            width = TransitDimens.CardBorderWidth,
+            color = MaterialTheme.colorScheme.borderSubtle
+        ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.5.dp,
-            pressedElevation = 4.dp
+            defaultElevation = TransitDimens.ElevationLow,
+            pressedElevation = TransitDimens.ElevationMedium
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp)
+                .padding(TransitDimens.SpacingBase)
         ) {
             // Header: Badge + Route Name + Type
             Row(
@@ -72,25 +84,27 @@ fun RouteCard(
                     backgroundColor = parseRouteColor(route.color)
                 )
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(TransitDimens.SpacingMd))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = route.name,
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp
+                            fontWeight = FontWeight.SemiBold
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
 
                     if (!route.type.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(TransitDimens.Spacing2xs))
                         Text(
                             text = route.type.orEmpty(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -98,21 +112,21 @@ fun RouteCard(
                 if (onFavoriteToggle != null) {
                     IconButton(
                         onClick = onFavoriteToggle,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(TransitDimens.MinTouchTargetSize)
                     ) {
                         Icon(
                             imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             contentDescription = if (isFavorite) "Bỏ yêu thích" else "Yêu thích",
-                            tint = if (isFavorite) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (isFavorite) Color(0xFFFF3B30) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(TransitDimens.IconMd)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
             // Terminals: Outbound / Inbound Descriptions
             if (!route.outBoundDesc.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(TransitDimens.SpacingSm))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -121,19 +135,21 @@ fun RouteCard(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = "Lộ trình",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.width(14.dp)
+                        modifier = Modifier.size(TransitDimens.IconXs)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(TransitDimens.SpacingSm))
                     Text(
                         text = route.outBoundDesc.orEmpty(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(TransitDimens.SpacingSm))
 
             // Footer: Operating Time & Direction Chips
             Row(
@@ -147,38 +163,41 @@ fun RouteCard(
                             imageVector = Icons.Default.AccessTime,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.width(14.dp)
+                            modifier = Modifier.size(TransitDimens.IconXs)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(TransitDimens.SpacingXs))
                         Text(
                             text = route.operationTime.orEmpty(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                } else {
+                    Spacer(modifier = Modifier.width(TransitDimens.SpacingXs))
                 }
 
                 // 2-Way Direction Chip
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(TransitDimens.RadiusXs),
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.padding(horizontal = TransitDimens.SpacingSm, vertical = TransitDimens.Spacing2xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.SwapHoriz,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.width(14.dp)
+                            modifier = Modifier.size(TransitDimens.IconXs)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(TransitDimens.SpacingXs))
                         Text(
                             text = "2 chiều",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -187,14 +206,24 @@ fun RouteCard(
     }
 }
 
+/**
+ * Robust route hex color parser.
+ * Falls back to default emerald green (0xFF00A86B) if null or unparseable.
+ */
 fun parseRouteColor(hexColor: String?): Color {
     if (hexColor.isNullOrBlank() || !hexColor.startsWith("#")) {
-        return Color(0xFF00897B)
+        return Color(0xFF00A86B)
     }
     return try {
-        Color(android.graphics.Color.parseColor(hexColor))
+        val clean = hexColor.removePrefix("#")
+        val hexValue = clean.toLong(16)
+        when (clean.length) {
+            6 -> Color(0xFF000000 or hexValue)
+            8 -> Color(hexValue)
+            else -> Color(0xFF00A86B)
+        }
     } catch (_: Exception) {
-        Color(0xFF00897B)
+        Color(0xFF00A86B)
     }
 }
 

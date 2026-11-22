@@ -2,15 +2,18 @@ package com.hcmcbustracker.core.designsystem.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(
+val DarkColorScheme = darkColorScheme(
     primary = GreenPrimaryLight,
     onPrimary = BackgroundDark,
     primaryContainer = GreenPrimaryDark,
@@ -24,10 +27,11 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = TextPrimaryDark,
     onSurfaceVariant = TextSecondaryDark,
     error = RedApproaching,
-    outline = DividerDark
+    outline = DividerDark,
+    outlineVariant = BorderSubtleDark
 )
 
-private val LightColorScheme = lightColorScheme(
+val LightColorScheme = lightColorScheme(
     primary = GreenPrimary,
     onPrimary = SurfaceLight,
     primaryContainer = GreenPrimaryLight.copy(alpha = 0.2f),
@@ -41,13 +45,38 @@ private val LightColorScheme = lightColorScheme(
     onSurface = TextPrimaryLight,
     onSurfaceVariant = TextSecondaryLight,
     error = RedApproaching,
-    outline = DividerLight
+    outline = DividerLight,
+    outlineVariant = BorderSubtleLight
 )
+
+/**
+ * Accessor for subtle hairline borders adapted to current dark/light theme.
+ */
+val ColorScheme.borderSubtle: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = if (isSystemInDarkTheme()) BorderSubtleDark else BorderSubtleLight
+
+/**
+ * Accessor for shimmer base color adapted to current dark/light theme.
+ */
+val ColorScheme.shimmerBase: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = if (isSystemInDarkTheme()) ShimmerBaseDark else ShimmerBaseLight
+
+/**
+ * Accessor for shimmer highlight color adapted to current dark/light theme.
+ */
+val ColorScheme.shimmerHighlight: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = if (isSystemInDarkTheme()) ShimmerHighlightDark else ShimmerHighlightLight
 
 @Composable
 fun HcmcBusTrackerTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Default false to enforce brand consistency
+    dynamicColor: Boolean = false, // Default false to enforce unified transit brand identity
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -61,6 +90,8 @@ fun HcmcBusTrackerTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
+        typography = HcmcTypography,
+        shapes = HcmcShapes,
         content = content
     )
 }

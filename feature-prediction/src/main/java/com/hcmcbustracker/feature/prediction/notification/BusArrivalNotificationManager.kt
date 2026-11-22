@@ -16,13 +16,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * User-configurable thresholds for arrival notifications.
+ */
+data class ArrivalAlertThresholds(
+    val enableTimeThreshold: Boolean = true,
+    val timeThresholdMinutes: Int = 5,
+    val enableDistanceThreshold: Boolean = true,
+    val distanceThresholdMeters: Double = 1000.0
+)
+
+/**
  * Manager handling bus arrival notifications in compliance with Android platform rules:
  *
  * 1. Background Execution Rules:
- *    Continuous 15-second polling is strictly forbidden in the background by Android Doze Mode
- *    and Background Execution Limits (Android 8.0+). Background WorkManager jobs have a mandatory
- *    minimum periodic interval of 15 minutes (PeriodicWorkRequest.MIN_PERIODIC_INTERVAL_MILLIS).
- *    Real-time high-frequency polling is foreground-only.
+ *    Background execution complies with Android Doze Mode and platform constraints.
+ *    Active short-term tracking runs through a bounded Foreground Service with sticky notification.
  *
  * 2. Notification Permissions:
  *    Requires runtime POST_NOTIFICATIONS permission on Android 13+ (API 33).
@@ -45,6 +53,8 @@ class BusArrivalNotificationManager @Inject constructor(
         const val CHANNEL_ID = "bus_arrival_alerts"
         const val CHANNEL_NAME = "Thông báo xe buýt đến trạm"
         const val CHANNEL_DESCRIPTION = "Thông báo dự báo ước lượng khi xe buýt sắp tiếp cận điểm dừng"
+        const val TRACKING_CHANNEL_ID = "bus_arrival_tracking"
+        const val TRACKING_CHANNEL_NAME = "Dịch vụ theo dõi xe buýt trực tiếp"
         const val COOLDOWN_DURATION_MS = 5 * 60 * 1000L // 5 minutes anti-spam cooldown
         const val DISCLAIMER = "Dự báo ước lượng dựa trên dữ liệu EBMS, có thể thay đổi tùy điều kiện giao thông."
     }
@@ -57,20 +67,31 @@ class BusArrivalNotificationManager @Inject constructor(
     }
 
     /**
-     * Creates the Android Notification Channel on Android 8.0 (API 26) and above.
+     * Creates the Android Notification Channels on Android 8.0 (API 26) and above.
      */
     fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+
+            val arrivalChannel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = CHANNEL_DESCRIPTION
                 enableVibration(true)
             }
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            notificationManager?.createNotificationChannel(channel)
+            notificationManager?.createNotificationChannel(arrivalChannel)
+
+            val trackingChannel = NotificationChannel(
+                TRACKING_CHANNEL_ID,
+                TRACKING_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Trạng thái theo dõi xe buýt khi ứng dụng đang chạy ở nền"
+                enableVibration(false)
+            }
+            notificationManager?.createNotificationChannel(trackingChannel)
         }
     }
 
@@ -91,23 +112,31 @@ class BusArrivalNotificationManager @Inject constructor(
     /**
      * Validates whether an alert should be dispatched for a given vehicle:
      * - Must have notification permission.
-     * - Vehicle GPS must be fresh (not stale).
-     * - Vehicle must be approaching (ETA <= 300s or distance <= 1000m).
+     * - Vehicle GPS must be fresh (not stale <= 180s).
+     * - Vehicle must satisfy time threshold and/or distance threshold.
      * - Not within anti-spam cooldown period for the same vehicle plate and stop.
      */
     fun canSendAlert(
         stopId: Int,
         routeNo: String,
         vehicle: ArrivalVehicle,
-        currentTimeMillis: Long = System.currentTimeMillis()
+        currentTimeMillis: Long = System.currentTimeMillis(),
+        thresholds: ArrivalAlertThresholds = ArrivalAlertThresholds(),
+        isStopMuted: Boolean = false
     ): Boolean {
+        if (isStopMuted) return false
         if (!hasNotificationPermission()) return false
 
         // Rejection rule 1: Reject corrupt, missing or stale GPS (> 180s)
         if (vehicle.isGpsStale()) return false
 
-        // Rejection rule 2: Vehicle must be within approaching threshold (eta <= 5 min or distance <= 1000m)
-        val isApproaching = vehicle.isApproaching || (vehicle.etaSeconds in 1..300) || (vehicle.distanceMeters in 1.0..1000.0)
+        // Rejection rule 2: Check configurable thresholds
+        val satisfiesTime = thresholds.enableTimeThreshold && vehicle.etaSeconds in 1..(thresholds.timeThresholdMinutes * 60)
+        val satisfiesDistance = thresholds.enableDistanceThreshold && vehicle.distanceMeters in 1.0..thresholds.distanceThresholdMeters
+        val fallbackApproaching = !thresholds.enableTimeThreshold && !thresholds.enableDistanceThreshold &&
+            (vehicle.isApproaching || vehicle.etaSeconds in 1..300 || vehicle.distanceMeters in 1.0..1000.0)
+
+        val isApproaching = satisfiesTime || satisfiesDistance || fallbackApproaching
         if (!isApproaching) return false
 
         // Rejection rule 3: Anti-duplication check within cooldown window
@@ -138,8 +167,40 @@ class BusArrivalNotificationManager @Inject constructor(
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+    }
+
+    /**
+     * Builds ongoing notification for background tracking service.
+     */
+    fun buildTrackingNotification(
+        stopName: String,
+        routeNo: String,
+        plateNumber: String,
+        statusText: String,
+        cancelIntent: android.app.PendingIntent? = null
+    ): NotificationCompat.Builder {
+        val title = "Đang theo dõi xe tuyến $routeNo ($plateNumber)"
+        val message = "Điểm đến: $stopName • $statusText"
+
+        val builder = NotificationCompat.Builder(context, TRACKING_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+
+        if (cancelIntent != null) {
+            builder.addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Hủy theo dõi",
+                cancelIntent
+            )
+        }
+
+        return builder
     }
 
     /**
@@ -151,9 +212,11 @@ class BusArrivalNotificationManager @Inject constructor(
         stopId: Int,
         routeNo: String,
         vehicle: ArrivalVehicle,
-        currentTimeMillis: Long = System.currentTimeMillis()
+        currentTimeMillis: Long = System.currentTimeMillis(),
+        thresholds: ArrivalAlertThresholds = ArrivalAlertThresholds(),
+        isStopMuted: Boolean = false
     ): Boolean {
-        if (!canSendAlert(stopId, routeNo, vehicle, currentTimeMillis)) {
+        if (!canSendAlert(stopId, routeNo, vehicle, currentTimeMillis, thresholds, isStopMuted)) {
             return false
         }
 

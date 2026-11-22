@@ -28,6 +28,8 @@ import com.hcmcbustracker.core.model.RouteVariant
 import com.hcmcbustracker.core.model.RouteVariantPollingTarget
 import com.hcmcbustracker.core.model.RouteVehicleAggregator
 import com.hcmcbustracker.core.model.RouteVehicleTelemetry
+import com.hcmcbustracker.core.model.SearchHistoryItem
+import com.hcmcbustracker.core.model.SearchHistoryType
 import com.hcmcbustracker.core.model.StaticDatasetMetadata
 import com.hcmcbustracker.core.model.UserPreferences
 import com.hcmcbustracker.core.model.VietnameseNormalizer
@@ -46,6 +48,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.IOException
 import javax.inject.Inject
@@ -78,6 +82,7 @@ class BusRepositoryImpl @Inject constructor(
 
     private val prefs = context.getSharedPreferences("hcmc_bus_tracker_prefs", Context.MODE_PRIVATE)
     private val _userPreferencesFlow = MutableStateFlow(loadInitialPreferences())
+    private val _searchHistoryFlow = MutableStateFlow<List<SearchHistoryItem>>(loadInitialSearchHistory())
     private val _datasetSyncProgress = MutableStateFlow<DatasetSyncProgress?>(null)
 
     private fun loadInitialPreferences(): UserPreferences {
@@ -85,11 +90,29 @@ class BusRepositoryImpl @Inject constructor(
         val themeMode = AppThemeMode.entries.getOrElse(themeOrdinal) { AppThemeMode.SYSTEM }
         val pollingSec = prefs.getInt("pref_polling_interval", 15)
         val notifEnabled = prefs.getBoolean("pref_notifications_enabled", true)
+        val timeMin = prefs.getInt("pref_alert_time_minutes", 5)
+        val distMeters = prefs.getFloat("pref_alert_distance_meters", 1000f).toDouble()
+        val disabledStops = prefs.getStringSet("pref_disabled_stop_notifications", emptySet())
+            ?.mapNotNull { it.toIntOrNull() }
+            ?.toSet()
+            .orEmpty()
         return UserPreferences(
             themeMode = themeMode,
             pollingIntervalSeconds = pollingSec,
-            notificationsEnabled = notifEnabled
+            notificationsEnabled = notifEnabled,
+            alertTimeMinutes = timeMin,
+            alertDistanceMeters = distMeters,
+            disabledStopNotificationIds = disabledStops
         )
+    }
+
+    private fun loadInitialSearchHistory(): List<SearchHistoryItem> {
+        val raw = prefs.getString("pref_search_history", null) ?: return emptyList()
+        return try {
+            json.decodeFromString<List<SearchHistoryItem>>(raw)
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     override fun getAllRoutes(): Flow<List<Route>> =
@@ -598,6 +621,44 @@ class BusRepositoryImpl @Inject constructor(
     override fun getFavoriteRoutes(): Flow<List<Route>> =
         favoriteRouteDao.getFavoriteRoutes().map { entities -> entities.map { it.toDomain() } }
 
+    override suspend fun cleanupOrphanFavorites() {
+        favoriteStopDao.cleanupOrphanFavorites()
+        favoriteRouteDao.cleanupOrphanFavorites()
+    }
+
+    // --- SEARCH HISTORY ---
+
+    override fun getSearchHistory(): Flow<List<SearchHistoryItem>> = _searchHistoryFlow.asStateFlow()
+
+    override suspend fun addSearchHistory(query: String, type: SearchHistoryType) {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) return
+        val currentList = _searchHistoryFlow.value.toMutableList()
+        currentList.removeAll { it.query.equals(cleanQuery, ignoreCase = true) }
+        currentList.add(0, SearchHistoryItem(query = cleanQuery, type = type, timestamp = System.currentTimeMillis()))
+        val trimmed = currentList.take(15)
+        _searchHistoryFlow.value = trimmed
+        try {
+            val serialized = json.encodeToString(trimmed)
+            prefs.edit().putString("pref_search_history", serialized).apply()
+        } catch (_: Exception) {}
+    }
+
+    override suspend fun removeSearchHistoryItem(query: String) {
+        val cleanQuery = query.trim()
+        val updated = _searchHistoryFlow.value.filterNot { it.query.equals(cleanQuery, ignoreCase = true) }
+        _searchHistoryFlow.value = updated
+        try {
+            val serialized = json.encodeToString(updated)
+            prefs.edit().putString("pref_search_history", serialized).apply()
+        } catch (_: Exception) {}
+    }
+
+    override suspend fun clearSearchHistory() {
+        _searchHistoryFlow.value = emptyList()
+        prefs.edit().remove("pref_search_history").apply()
+    }
+
     // --- APP SETTINGS & USER PREFERENCES ---
 
     override fun getUserPreferences(): Flow<UserPreferences> = _userPreferencesFlow.asStateFlow()
@@ -618,8 +679,47 @@ class BusRepositoryImpl @Inject constructor(
         _userPreferencesFlow.value = _userPreferencesFlow.value.copy(notificationsEnabled = enabled)
     }
 
+    override suspend fun setArrivalAlertThresholds(timeMinutes: Int, distanceMeters: Double) {
+        val safeMin = timeMinutes.coerceIn(1, 30)
+        val safeDist = distanceMeters.coerceIn(200.0, 5000.0)
+        prefs.edit()
+            .putInt("pref_alert_time_minutes", safeMin)
+            .putFloat("pref_alert_distance_meters", safeDist.toFloat())
+            .apply()
+        _userPreferencesFlow.value = _userPreferencesFlow.value.copy(
+            alertTimeMinutes = safeMin,
+            alertDistanceMeters = safeDist
+        )
+    }
+
+    override suspend fun toggleStopNotification(stopId: Int, enabled: Boolean) {
+        val current = _userPreferencesFlow.value.disabledStopNotificationIds.toMutableSet()
+        if (enabled) {
+            current.remove(stopId)
+        } else {
+            current.add(stopId)
+        }
+        val stringSet = current.map { it.toString() }.toSet()
+        prefs.edit().putStringSet("pref_disabled_stop_notifications", stringSet).apply()
+        _userPreferencesFlow.value = _userPreferencesFlow.value.copy(disabledStopNotificationIds = current)
+    }
+
     override suspend fun clearCache() {
         routePathDao.clearAllPaths()
+    }
+
+    override suspend fun getTimetablesForRoute(routeId: Int): NetworkResult<List<com.hcmcbustracker.core.model.Timetable>> {
+        return executeWithRetry {
+            val dtos = apiService.getTimetableByRoute(routeId)
+            dtos.map { it.toDomain() }
+        }
+    }
+
+    override suspend fun getTripsForTimetable(routeId: Int, timetableId: Int): NetworkResult<List<com.hcmcbustracker.core.model.Trip>> {
+        return executeWithRetry {
+            val dtos = apiService.getTripsByTimetable(routeId, timetableId)
+            dtos.map { it.toDomain() }
+        }
     }
 
     /**

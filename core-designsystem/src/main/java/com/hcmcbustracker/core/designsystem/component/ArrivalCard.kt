@@ -1,5 +1,7 @@
 package com.hcmcbustracker.core.designsystem.component
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,9 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,14 +26,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.hcmcbustracker.core.designsystem.theme.CardShape
 import com.hcmcbustracker.core.designsystem.theme.HcmcBusTrackerTheme
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
+import com.hcmcbustracker.core.designsystem.theme.borderSubtle
 import com.hcmcbustracker.core.model.ArrivalVehicle
 import kotlin.math.roundToInt
 
+/**
+ * Realtime vehicle arrival prediction card.
+ * Modernized with Apple HIG subtle hairline borders, crisp typography, and GPS freshness dot.
+ */
 @Composable
 fun ArrivalCard(
     routeNo: String,
@@ -40,29 +50,35 @@ fun ArrivalCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val freshnessStatus = GpsFreshnessStatus.fromTimestamp(vehicle.gpsTimestampMillis)
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = CardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
+        border = BorderStroke(
+            width = TransitDimens.CardBorderWidth,
+            color = MaterialTheme.colorScheme.borderSubtle
+        ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 2.dp,
-            pressedElevation = 4.dp
+            defaultElevation = TransitDimens.ElevationLow,
+            pressedElevation = TransitDimens.ElevationMedium
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(TransitDimens.SpacingBase),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Left: RouteBadge
             RouteBadge(
                 routeNo = routeNo,
-                modifier = Modifier.padding(end = 12.dp)
+                modifier = Modifier.padding(end = TransitDimens.SpacingMd)
             )
 
             // Middle: Destination, Plate Number, Distance & Speed
@@ -70,39 +86,56 @@ fun ArrivalCard(
                 Text(
                     text = destination,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp
+                        fontWeight = FontWeight.SemiBold
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(TransitDimens.SpacingXs))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(TransitDimens.SpacingSm)
                 ) {
-                    // License Plate Chip
+                    // License Plate Chip with GPS freshness indicator dot
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(TransitDimens.RadiusXs),
                         color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
-                        Text(
-                            text = vehicle.plateNumber.ifBlank { "Xe buýt" },
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = TransitDimens.SpacingSm, vertical = TransitDimens.Spacing2xs),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(freshnessStatus.color)
+                            )
+                            Spacer(modifier = Modifier.width(TransitDimens.SpacingXs))
+                            Text(
+                                text = vehicle.plateNumber.ifBlank { "Xe buýt" },
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
 
                     // Distance
                     Text(
                         text = "Cách ${vehicle.formattedDistance}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
 
                     // Speed
@@ -112,20 +145,23 @@ fun ArrivalCard(
                                 imageVector = Icons.Default.Speed,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier.size(TransitDimens.Icon2xs)
                             )
-                            Spacer(modifier = Modifier.width(2.dp))
+                            Spacer(modifier = Modifier.width(TransitDimens.Spacing2xs))
                             Text(
                                 text = "${vehicle.speedKmH.roundToInt()} km/h",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Clip
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(TransitDimens.SpacingSm))
 
             // Right: ETA Chip
             ArrivalTimeChip(

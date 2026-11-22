@@ -53,6 +53,9 @@ interface FavoriteStopDao {
         ORDER BY f.addedAtTimestamp DESC
     """)
     fun getFavoriteStops(): Flow<List<BusStopEntity>>
+
+    @Query("DELETE FROM favorite_stops WHERE stopId NOT IN (SELECT id FROM bus_stops)")
+    suspend fun cleanupOrphanFavorites(): Int
 }
 
 @Dao
@@ -73,6 +76,9 @@ interface FavoriteRouteDao {
         ORDER BY f.addedAtTimestamp DESC
     """)
     fun getFavoriteRoutes(): Flow<List<RouteEntity>>
+
+    @Query("DELETE FROM favorite_routes WHERE routeId NOT IN (SELECT id FROM routes)")
+    suspend fun cleanupOrphanFavorites(): Int
 }
 
 @Dao

@@ -88,6 +88,27 @@ class BusArrivalNotificationManagerTest {
     }
 
     @Test
+    fun `canSendAlert rejects vehicle when stop is muted`() {
+        val vehicle = ArrivalVehicle(
+            plateNumber = "51B-12345",
+            distanceMeters = 300.0,
+            etaSeconds = 60,
+            speedKmH = 20.0,
+            timestampIso = getCurrentIsoTimestamp(),
+            status = 1,
+            responseReceivedTimeMillis = System.currentTimeMillis()
+        )
+
+        val canSend = notificationManager.canSendAlert(
+            stopId = 100,
+            routeNo = "01",
+            vehicle = vehicle,
+            isStopMuted = true
+        )
+        assertFalse("Alert should be suppressed when stop is muted by user", canSend)
+    }
+
+    @Test
     fun `anti-spam cooldown suppresses duplicate alert for same vehicle within 5 minutes`() {
         val now = 10_000_000L
         val vehicle = ArrivalVehicle(
@@ -161,5 +182,70 @@ class BusArrivalNotificationManagerTest {
         assertTrue("Notification should contain distance", fullContent.contains(vehicle.formattedDistance))
         assertTrue("Notification must contain EBMS disclaimer", fullContent.contains("EBMS"))
         assertTrue("Notification must state prediction is an estimate", fullContent.contains("ước lượng"))
+    }
+
+    @Test
+    fun `canSendAlert respects custom user-configured thresholds`() {
+        val vehicle = ArrivalVehicle(
+            plateNumber = "50E-123.45",
+            distanceMeters = 800.0,
+            etaSeconds = 200, // ~3.3 minutes
+            speedKmH = 20.0,
+            timestampIso = getCurrentIsoTimestamp(),
+            status = 1,
+            responseReceivedTimeMillis = System.currentTimeMillis()
+        )
+
+        // Threshold of 3 minutes: 200 seconds > 180 seconds, so time threshold fails
+        val strictTimeThreshold = ArrivalAlertThresholds(
+            enableTimeThreshold = true,
+            timeThresholdMinutes = 3,
+            enableDistanceThreshold = false
+        )
+        assertFalse(notificationManager.canSendAlert(100, "01", vehicle, thresholds = strictTimeThreshold))
+
+        // Threshold of 5 minutes: 200 seconds <= 300 seconds, so time threshold succeeds
+        val lenientTimeThreshold = ArrivalAlertThresholds(
+            enableTimeThreshold = true,
+            timeThresholdMinutes = 5,
+            enableDistanceThreshold = false
+        )
+        assertTrue(notificationManager.canSendAlert(100, "01", vehicle, thresholds = lenientTimeThreshold))
+
+        // Distance threshold of 500m: 800m > 500m, fails
+        val strictDistThreshold = ArrivalAlertThresholds(
+            enableTimeThreshold = false,
+            enableDistanceThreshold = true,
+            distanceThresholdMeters = 500.0
+        )
+        assertFalse(notificationManager.canSendAlert(100, "01", vehicle, thresholds = strictDistThreshold))
+
+        // Distance threshold of 1000m: 800m <= 1000m, succeeds
+        val lenientDistThreshold = ArrivalAlertThresholds(
+            enableTimeThreshold = false,
+            enableDistanceThreshold = true,
+            distanceThresholdMeters = 1000.0
+        )
+        assertTrue(notificationManager.canSendAlert(100, "01", vehicle, thresholds = lenientDistThreshold))
+    }
+
+    @Test
+    fun `buildTrackingNotification creates sticky ongoing notification with correct metadata`() {
+        val builder = notificationManager.buildTrackingNotification(
+            stopName = "Bến xe buýt Sài Gòn",
+            routeNo = "01",
+            plateNumber = "50E-784.27",
+            statusText = "Còn 500m (~2 phút)"
+        )
+
+        val notification = builder.build()
+        val extras = notification.extras
+        val title = extras.getCharSequence("android.title")?.toString()
+        val text = extras.getCharSequence("android.text")?.toString()
+
+        assertEquals("Đang theo dõi xe tuyến 01 (50E-784.27)", title)
+        assertTrue(text?.contains("Bến xe buýt Sài Gòn") == true)
+        assertTrue(text?.contains("Còn 500m") == true)
+        assertTrue((notification.flags and android.app.Notification.FLAG_ONGOING_EVENT) != 0)
     }
 }

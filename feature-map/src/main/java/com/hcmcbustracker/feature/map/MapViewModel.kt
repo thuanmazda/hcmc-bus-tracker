@@ -197,6 +197,12 @@ class MapViewModel @Inject constructor(
     private var routePollingJob: Job? = null
     private var activePollingRouteVar: Pair<Int, Int>? = null
     private var isMapInForeground = false
+
+    val isPollingActive: Boolean
+        get() = routePollingJob?.isActive == true
+
+    val isForegroundActive: Boolean
+        get() = isMapInForeground
     private var basePollIntervalMs: Long = DEFAULT_POLL_INTERVAL_MS
     internal var computeDispatcher: CoroutineDispatcher = Dispatchers.Default
     internal var backoffJitterProvider: () -> Double = { kotlin.random.Random.Default.nextDouble() }
@@ -645,6 +651,18 @@ class MapViewModel @Inject constructor(
                             _routeVehicles.value = updatedModels
                             val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                             _routeLastUpdatedTime.value = sdf.format(Date())
+
+                            // Register active fleet into in-memory ActiveFleetRegistry for license plate search
+                            val curRoute = _activeRoute.value
+                            val curVar = _activeVariant.value
+                            if (curRoute != null && curVar != null) {
+                                com.hcmcbustracker.core.model.ActiveFleetRegistry.recordFleet(
+                                    telemetries = vehiclesTelemetry,
+                                    routeNo = curRoute.routeNo,
+                                    routeName = curRoute.name,
+                                    directionName = curVar.shortName
+                                )
+                            }
 
                             _routeVehicleFeedStatus.value = when {
                                 updatedModels.isEmpty() -> PredictionFeedStatus.EMPTY

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hcmcbustracker.core.database.repository.BusRepository
 import com.hcmcbustracker.core.model.Route
+import com.hcmcbustracker.core.model.sortedByRouteNumber
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -19,9 +20,21 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Filter groups for transit routes in Ho Chi Minh City.
+ */
+enum class RouteFilterType(val labelVi: String) {
+    ALL("Tất cả"),
+    SUBSIDIZED("Có trợ giá"),
+    NON_SUBSIDIZED("Không trợ giá"),
+    ELECTRIC("Xe điện")
+}
+
 data class RoutesUiState(
     val query: String = "",
+    val selectedFilter: RouteFilterType = RouteFilterType.ALL,
     val routes: List<Route> = emptyList(),
+    val totalRouteCount: Int = 0,
     val favoriteRouteIds: Set<Int> = emptySet(),
     val isLoading: Boolean = false,
     val isSyncing: Boolean = false,
@@ -34,6 +47,7 @@ class RoutesViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
+    private val _selectedFilter = MutableStateFlow(RouteFilterType.ALL)
     private val _isSyncing = MutableStateFlow(false)
     private val _errorMessage = MutableStateFlow<String?>(null)
 
@@ -42,7 +56,7 @@ class RoutesViewModel @Inject constructor(
     }
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-    private val routesFlow = _query
+    private val rawRoutesFlow = _query
         .debounce(300)
         .distinctUntilChanged()
         .flatMapLatest { q ->
@@ -50,18 +64,49 @@ class RoutesViewModel @Inject constructor(
             else repository.searchRoutes(q)
         }
 
+    private data class FilterParams(
+        val query: String,
+        val filter: RouteFilterType
+    )
+
+    private val filterParamsFlow = combine(_query, _selectedFilter) { query, filter ->
+        FilterParams(query, filter)
+    }
+
     val uiState: StateFlow<RoutesUiState> = combine(
-        _query,
-        routesFlow,
+        filterParamsFlow,
+        rawRoutesFlow,
         favoriteIdsFlow,
         _isSyncing,
         _errorMessage
-    ) { query, routes, favIds, isSyncing, errorMessage ->
+    ) { params, rawRoutes, favIds, isSyncing, errorMessage ->
+        // 1. Natural Sort via RouteNumberComparator (ensures D4 does NOT precede 01, 02, etc.)
+        val naturallySortedRoutes = rawRoutes.sortedByRouteNumber()
+
+        // 2. Apply group filter if selected
+        val filteredRoutes = when (params.filter) {
+            RouteFilterType.ALL -> naturallySortedRoutes
+            RouteFilterType.SUBSIDIZED -> naturallySortedRoutes.filter { route ->
+                route.type?.contains("Có trợ giá", ignoreCase = true) == true
+            }
+            RouteFilterType.NON_SUBSIDIZED -> naturallySortedRoutes.filter { route ->
+                route.type?.contains("Không trợ giá", ignoreCase = true) == true
+            }
+            RouteFilterType.ELECTRIC -> naturallySortedRoutes.filter { route ->
+                route.routeNo.startsWith("D", ignoreCase = true) ||
+                        route.type?.contains("điện", ignoreCase = true) == true ||
+                        route.orgs?.contains("VinBus", ignoreCase = true) == true ||
+                        route.name.contains("Vinhomes", ignoreCase = true)
+            }
+        }
+
         RoutesUiState(
-            query = query,
-            routes = routes,
+            query = params.query,
+            selectedFilter = params.filter,
+            routes = filteredRoutes,
+            totalRouteCount = naturallySortedRoutes.size,
             favoriteRouteIds = favIds,
-            isLoading = routes.isEmpty() && isSyncing,
+            isLoading = naturallySortedRoutes.isEmpty() && isSyncing,
             isSyncing = isSyncing,
             errorMessage = errorMessage
         )
@@ -87,6 +132,10 @@ class RoutesViewModel @Inject constructor(
 
     fun onQueryChanged(newQuery: String) {
         _query.value = newQuery
+    }
+
+    fun onFilterSelected(filter: RouteFilterType) {
+        _selectedFilter.value = filter
     }
 
     fun toggleFavorite(routeId: Int) {

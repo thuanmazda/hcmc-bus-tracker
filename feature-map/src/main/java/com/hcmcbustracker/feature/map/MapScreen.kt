@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -216,7 +218,7 @@ fun MapScreen(
         }
     }
 
-    // Lifecycle-aware polling management (pause network calls when backgrounded)
+    // Lifecycle-aware polling management (pause network calls when backgrounded or unmounted on tab switch)
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -227,8 +229,12 @@ fun MapScreen(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            viewModel.onMapResumed()
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.onMapPaused()
         }
     }
 
@@ -909,6 +915,7 @@ fun MapScreen(
             exit = slideOutVertically(targetOffsetY = { it }),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
                 .padding(16.dp)
         ) {
             state.selectedStop?.let { stop ->
@@ -951,17 +958,18 @@ fun MapScreen(
             }
         }
 
-        // Bottom Tracked Vehicle Card
+        // Bottom Tracked Vehicle Sheet
         AnimatedVisibility(
             visible = state.trackedVehicle != null,
             enter = slideInVertically(initialOffsetY = { it }),
             exit = slideOutVertically(targetOffsetY = { it }),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(16.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             state.trackedVehicle?.let { vehicle ->
-                VehicleTrackingInfoCard(
+                VehicleTrackingSheet(
                     vehicle = vehicle,
                     cameraMode = state.cameraMode,
                     onToggleAutoFollow = viewModel::toggleVehicleAutoFollow,
@@ -990,6 +998,7 @@ fun MapScreen(
             exit = slideOutVertically(targetOffsetY = { it }),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
                 .padding(16.dp)
         ) {
             Card(
@@ -1046,7 +1055,8 @@ fun MapScreen(
                                             text = item.stop.fullAddress,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -1313,7 +1323,8 @@ private fun StopInfoPopupCard(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp
                                 ),
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -1322,7 +1333,8 @@ private fun StopInfoPopupCard(
                                 text = stop.fullAddress,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -1436,319 +1448,3 @@ private fun fetchDeviceLocation(
         }
 }
 
-/**
- * Compact, honest Bottom Card displaying tracked vehicle route/direction context,
- * next/selected stop distance, reliable ETA, arrival status, 5-timestamp freshness & follow toggle.
- */
-@Composable
-private fun VehicleTrackingInfoCard(
-    vehicle: TrackedVehicleState,
-    cameraMode: VehicleCameraMode,
-    onToggleAutoFollow: () -> Unit,
-    onCenterVehicle: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val isUnknown = vehicle.arrivalStatus == VehicleArrivalStatus.UNKNOWN
-    val isPassed = vehicle.arrivalStatus == VehicleArrivalStatus.PASSED_STOP
-    val isFollowing = cameraMode == VehicleCameraMode.FOLLOW_VEHICLE
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // 1. Header: Plate, Route/Variant badge, 6-state Arrival Status Chip, Close button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = CircleShape,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.DirectionsBus,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = "Xe ${vehicle.plateNumber}",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                maxLines = 1
-                            )
-                            if (vehicle.routeNo.isNotBlank()) {
-                                RouteBadge(routeNo = vehicle.routeNo)
-                            }
-                            VehicleArrivalStatusChip(status = vehicle.arrivalStatus)
-                        }
-
-                        if (vehicle.variantShortName.isNotBlank()) {
-                            Text(
-                                text = "Chiều: ${vehicle.variantShortName}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
-
-                IconButton(onClick = onClose, modifier = Modifier.size(30.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Đóng theo dõi",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // 2. Stop Progression Line (Selected stop vs Next stop along route)
-            if (isPassed && !vehicle.selectedStopName.isNullOrBlank()) {
-                val passedDist = kotlin.math.abs(vehicle.distanceToSelectedStopMeters ?: 0.0)
-                Text(
-                    text = "Đã đi qua trạm ${vehicle.selectedStopName} (${formatMetricDistance(passedDist)})",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color(0xFFE65100),
-                    maxLines = 1
-                )
-            }
-            val nextStopLabel = vehicle.nextStopName ?: vehicle.stopName.ifBlank { "Trạm #${vehicle.stopId}" }
-            Text(
-                text = "Trạm kế tiếp: $nextStopLabel",
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 3. 3 Clean Metric Boxes: Route Distance | Reliable ETA | Speed
-            val distanceText = when {
-                isUnknown -> "--"
-                isPassed -> formatMetricDistance(vehicle.distanceToNextStopMeters ?: vehicle.effectiveDistanceMeters)
-                else -> formatMetricDistance(vehicle.effectiveDistanceMeters)
-            }
-            val distanceSublabel = when (vehicle.positionSource) {
-                PositionSource.LATENCY_COMPENSATED ->
-                    if (vehicle.projectedDistanceMeters > 0) "Dự đoán bù +${vehicle.projectedDistanceMeters.toInt()}m" else "Dự đoán theo tuyến"
-                PositionSource.INTERPOLATED_ON_ROUTE -> "Ước tính theo tuyến"
-                PositionSource.HELD_AT_LAST_VALID_GPS -> "Giữ vị trí cũ (GPS trễ)"
-                PositionSource.UNKNOWN -> "Thiếu dữ liệu vị trí"
-            }
-
-            val etaText = if (!isUnknown && vehicle.etaSeconds != null && vehicle.etaSeconds >= 0) {
-                formatMetricEta(vehicle.etaSeconds)
-            } else {
-                "--"
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                VehicleMetricBox(
-                    label = if (isPassed && vehicle.nextStopName != null) "Tới trạm kế" else "Cự ly tuyến",
-                    value = distanceText,
-                    sublabel = distanceSublabel,
-                    modifier = Modifier.weight(1f)
-                )
-
-                VehicleMetricBox(
-                    label = "ETA ước tính",
-                    value = etaText,
-                    sublabel = if (vehicle.gpsAgeSeconds >= 0) "GPS ${vehicle.formattedGpsTime} (${vehicle.gpsAgeSeconds}s)" else "GPS ${vehicle.formattedGpsTime}",
-                    modifier = Modifier.weight(1f)
-                )
-
-                VehicleMetricBox(
-                    label = "Vận tốc",
-                    value = if (vehicle.speedKmH >= 0.0) "${vehicle.speedKmH.toInt()} km/h" else "--",
-                    sublabel = if (vehicle.speedKmH <= 1.5) "Đang dừng" else "Đang chạy",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 4. Footer: Freshness Tier Badge, Update timestamp, and Auto-Follow / Center button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        LatencyTierBadge(category = vehicle.latencyCategory)
-                        if (vehicle.isGpsTimestampUnchanged) {
-                            Text(
-                                text = "• GPS giữ nguyên",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = Color(0xFFF57F17)
-                            )
-                        }
-                    }
-                    val updatedTimeText = remember(vehicle.renderedAtMillis) {
-                        java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                            .format(java.util.Date(vehicle.renderedAtMillis))
-                    }
-                    Text(
-                        text = "Cập nhật app: $updatedTimeText",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                FilterChip(
-                    selected = isFollowing,
-                    onClick = {
-                        if (isFollowing) onToggleAutoFollow() else onCenterVehicle()
-                    },
-                    label = {
-                        Text(
-                            text = if (isFollowing) "Đang theo dõi" else "Theo dõi xe",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold)
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (isFollowing) Icons.Default.GpsFixed else Icons.Default.GpsNotFixed,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun VehicleMetricBox(
-    label: String,
-    value: String,
-    sublabel: String,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = sublabel,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1
-            )
-        }
-    }
-}
-
-@Composable
-private fun VehicleArrivalStatusChip(status: VehicleArrivalStatus) {
-    val (bgColor, textColor, label) = when (status) {
-        VehicleArrivalStatus.MOVING -> Triple(Color(0xFFE8F5E9), Color(0xFF2E7D32), status.labelVi)
-        VehicleArrivalStatus.APPROACHING_STOP -> Triple(Color(0xFFE3F2FD), Color(0xFF1565C0), status.labelVi)
-        VehicleArrivalStatus.ARRIVING_AT_STOP -> Triple(Color(0xFFFFF8E1), Color(0xFFE65100), status.labelVi)
-        VehicleArrivalStatus.AT_STOP -> Triple(Color(0xFFEDE7F6), Color(0xFF512DA8), status.labelVi)
-        VehicleArrivalStatus.PASSED_STOP -> Triple(Color(0xFFFFF3E0), Color(0xFFD84315), status.labelVi)
-        VehicleArrivalStatus.UNKNOWN -> Triple(Color(0xFFF5F5F5), Color(0xFF616161), "Không đủ dữ liệu")
-    }
-
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = bgColor
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            maxLines = 1
-        )
-    }
-}
-
-@Composable
-private fun LatencyTierBadge(category: GpsLatencyCategory) {
-    val (bgColor, textColor) = when (category) {
-        GpsLatencyCategory.FRESH -> Pair(Color(0xFFE8F5E9), Color(0xFF2E7D32))
-        GpsLatencyCategory.SLIGHT_DELAY -> Pair(Color(0xFFE0F2F1), Color(0xFF00695C))
-        GpsLatencyCategory.DELAYED -> Pair(Color(0xFFFFF8E1), Color(0xFFF57F17))
-        GpsLatencyCategory.STALE -> Pair(Color(0xFFFFEBEE), Color(0xFFC62828))
-        GpsLatencyCategory.UNKNOWN -> Pair(Color(0xFFF5F5F5), Color(0xFF616161))
-    }
-
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = bgColor
-    ) {
-        Text(
-            text = category.labelVi,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            maxLines = 1
-        )
-    }
-}
-
-private fun formatMetricDistance(meters: Double): String {
-    return if (meters < 1000.0) {
-        "${meters.toInt()}m"
-    } else {
-        String.format(java.util.Locale.US, "%.2f km", meters / 1000.0)
-    }
-}
-
-private fun formatMetricEta(etaSeconds: Int?): String {
-    if (etaSeconds == null || etaSeconds < 0) return "--"
-    if (etaSeconds < 60) return "< 1 phút"
-    val mins = etaSeconds / 60
-    val secs = etaSeconds % 60
-    return if (secs == 0) "$mins phút" else "$mins p $secs s"
-}

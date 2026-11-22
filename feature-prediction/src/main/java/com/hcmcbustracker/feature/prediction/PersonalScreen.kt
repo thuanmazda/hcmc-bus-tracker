@@ -1,9 +1,20 @@
 package com.hcmcbustracker.feature.prediction
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,17 +28,24 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Brightness4
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +53,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -50,17 +69,28 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.hcmcbustracker.core.designsystem.component.EmptyState
 import com.hcmcbustracker.core.designsystem.component.RouteCard
 import com.hcmcbustracker.core.designsystem.component.StopCard
+import com.hcmcbustracker.core.designsystem.theme.CardShape
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
+import com.hcmcbustracker.core.designsystem.theme.borderSubtle
 import com.hcmcbustracker.core.model.AppThemeMode
 import com.hcmcbustracker.core.model.DatasetSyncStatus
+import com.hcmcbustracker.core.model.SearchHistoryItem
+import com.hcmcbustracker.core.model.SearchHistoryType
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -138,8 +168,10 @@ fun PersonalScreen(
                     PersonalTab.STOPS -> {
                         FavoriteStopsTab(
                             stops = state.favoriteStops,
+                            disabledStopIds = state.userPreferences.disabledStopNotificationIds,
                             onStopClick = onStopSelected,
-                            onRemoveFavorite = viewModel::removeFavoriteStop
+                            onRemoveFavorite = viewModel::removeFavoriteStop,
+                            onToggleNotification = viewModel::toggleStopNotification
                         )
                     }
                     PersonalTab.ROUTES -> {
@@ -164,8 +196,10 @@ fun PersonalScreen(
 @Composable
 private fun FavoriteStopsTab(
     stops: List<com.hcmcbustracker.core.model.BusStop>,
+    disabledStopIds: Set<Int>,
     onStopClick: (Int) -> Unit,
-    onRemoveFavorite: (Int) -> Unit
+    onRemoveFavorite: (Int) -> Unit,
+    onToggleNotification: (Int, Boolean) -> Unit
 ) {
     if (stops.isEmpty()) {
         EmptyState(
@@ -180,12 +214,54 @@ private fun FavoriteStopsTab(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(items = stops, key = { it.id }) { stop ->
-                StopCard(
-                    stop = stop,
-                    isFavorite = true,
-                    onFavoriteToggle = { onRemoveFavorite(stop.id) },
-                    onClick = { onStopClick(stop.id) }
-                )
+                val isMuted = disabledStopIds.contains(stop.id)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(modifier = Modifier.padding(bottom = 6.dp)) {
+                        StopCard(
+                            stop = stop,
+                            isFavorite = true,
+                            onFavoriteToggle = { onRemoveFavorite(stop.id) },
+                            onClick = { onStopClick(stop.id) }
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isMuted) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                modifier = Modifier.clickable { onToggleNotification(stop.id, isMuted) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = if (isMuted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isMuted) "Đã tắt chuông xe đến" else "Báo khi xe sắp đến",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                        color = if (isMuted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -221,6 +297,7 @@ private fun FavoriteRoutesTab(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SettingsTab(
     state: PersonalUiState,
@@ -232,44 +309,76 @@ private fun SettingsTab(
     ) {
         // App Identity Header
         item {
+            val context = LocalContext.current
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(48.dp)
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.DirectionsBus,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(26.dp)
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.DirectionsBus,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "HCMC Bus Tracker",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            )
+                            Text(
+                                text = "Hệ thống thông tin xe buýt thời gian thực TP.HCM",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Phiên bản 1.1.0 (Build 20261115)",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    Column {
-                        Text(
-                            text = "HCMC Bus Tracker",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
+                    OutlinedButton(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/thuanmazda/hcmc-bus-tracker"))
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
-                        Text(
-                            text = "Hệ thống thông tin xe buýt thời gian thực TP.HCM",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Xem mã nguồn dự án trên GitHub", style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -293,7 +402,7 @@ private fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Giao diện hiển thị (Theme)",
+                            text = "Giao diện hiển thị",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                     }
@@ -334,7 +443,7 @@ private fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Chu kỳ làm mới dự báo (Realtime Polling)",
+                            text = "Chu kỳ làm mới dự báo trực tiếp",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                     }
@@ -356,7 +465,7 @@ private fun SettingsTab(
                             FilterChip(
                                 selected = state.userPreferences.pollingIntervalSeconds == seconds,
                                 onClick = { viewModel.setPollingIntervalSeconds(seconds) },
-                                label = { Text("${seconds}s${if (seconds == 15) " (chuẩn)" else ""}") },
+                                label = { Text("${seconds}s${if (seconds == 15) " (mặc định)" else ""}") },
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -365,7 +474,190 @@ private fun SettingsTab(
             }
         }
 
-        // Notifications Setting
+        // Notifications Setting & Configurable Thresholds
+        item {
+            val context = LocalContext.current
+            var hasNotificationPermission by remember {
+                mutableStateOf(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) == PackageManager.PERMISSION_GRANTED
+                    } else {
+                        NotificationManagerCompat.from(context).areNotificationsEnabled()
+                    }
+                )
+            }
+
+            val permissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                hasNotificationPermission = isGranted
+                if (!isGranted) {
+                    viewModel.setNotificationsEnabled(false)
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Thông báo xe sắp đến trạm",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Text(
+                                    text = "Gửi thông báo ước lượng khi xe đang tiến gần điểm dừng",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = state.userPreferences.notificationsEnabled,
+                            onCheckedChange = { enabled ->
+                                if (enabled && !hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                                viewModel.setNotificationsEnabled(enabled)
+                            }
+                        )
+                    }
+
+                    if (state.userPreferences.notificationsEnabled && !hasNotificationPermission) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(10.dp)
+                                    .clickable {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        } else {
+                                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                data = Uri.fromParts("package", context.packageName, null)
+                                            }
+                                            context.startActivity(intent)
+                                        }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Quyền thông báo Android hiện chưa được cấp",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Text(
+                                        text = "Nhấn vào đây để cấp quyền nhằm nhận cảnh báo khi xe đến gần.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (state.userPreferences.notificationsEnabled) {
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Time threshold selection
+                        Text(
+                            text = "Ngưỡng thời gian cảnh báo:",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(3, 5, 10).forEach { mins ->
+                                FilterChip(
+                                    selected = state.userPreferences.alertTimeMinutes == mins,
+                                    onClick = {
+                                        viewModel.setArrivalAlertThresholds(
+                                            mins,
+                                            state.userPreferences.alertDistanceMeters
+                                        )
+                                    },
+                                    label = { Text("$mins phút") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Distance threshold selection
+                        Text(
+                            text = "Ngưỡng khoảng cách cảnh báo:",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(500.0, 1000.0, 1500.0).forEach { dist ->
+                                val label = if (dist >= 1000.0) "${(dist / 1000).toInt()} km" else "${dist.toInt()} m"
+                                FilterChip(
+                                    selected = state.userPreferences.alertDistanceMeters == dist,
+                                    onClick = {
+                                        viewModel.setArrivalAlertThresholds(
+                                            state.userPreferences.alertTimeMinutes,
+                                            dist
+                                        )
+                                    },
+                                    label = { Text(label) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "ℹ️ Lưu ý: Ứng dụng chỉ phát thông báo khi có dữ liệu GPS mới (< 3 phút) và xe cách trạm dưới ngưỡng đã chọn. Không tự ý polling ngầm liên tục gây hao pin.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Search History Section
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -373,40 +665,82 @@ private fun SettingsTab(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Thông báo xe sắp đến trạm",
+                                text = "Lịch sử tìm kiếm (${state.searchHistory.size} mục)",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
-                            Text(
-                                text = "Gửi thông báo ước lượng khi xe đang tiến gần điểm dừng",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        }
+
+                        if (state.searchHistory.isNotEmpty()) {
+                            TextButton(onClick = viewModel::clearSearchHistory) {
+                                Text(
+                                    text = "Xóa tất cả",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
 
-                    Switch(
-                        checked = state.userPreferences.notificationsEnabled,
-                        onCheckedChange = { viewModel.setNotificationsEnabled(it) }
-                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (state.searchHistory.isEmpty()) {
+                        Text(
+                            text = "Chưa có truy vấn tìm kiếm nào được lưu.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            state.searchHistory.forEach { item ->
+                                val typeIcon = when (item.type) {
+                                    SearchHistoryType.ROUTE -> Icons.Default.Navigation
+                                    SearchHistoryType.STOP -> Icons.Default.Place
+                                    SearchHistoryType.PLATE -> Icons.Default.DirectionsBus
+                                    SearchHistoryType.GENERAL -> Icons.Default.Search
+                                }
+                                InputChip(
+                                    selected = false,
+                                    onClick = {},
+                                    label = { Text(item.query) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = typeIcon,
+                                            contentDescription = item.type.label,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Xóa",
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clickable { viewModel.removeSearchHistoryItem(item.query) }
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -439,7 +773,7 @@ private fun SettingsTab(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = "Dữ liệu tuyến xe (Offline)",
+                                    text = "Dữ liệu tuyến xe ngoại tuyến",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                 )
                             }
@@ -464,6 +798,14 @@ private fun SettingsTab(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "• Dữ liệu ngoại tuyến: Danh mục toàn bộ tuyến xe, biến thể và trạm dừng được lưu trong cơ sở dữ liệu SQLite/Room trên thiết bị để tra cứu không cần kết nối mạng.\n• Dữ liệu trực tiếp: Dự báo thời gian đến trạm (ETA) và vị trí xe GPS được truy vấn trực tiếp từ EBMS theo phiên làm việc, không lưu đè lên dữ liệu tĩnh.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 

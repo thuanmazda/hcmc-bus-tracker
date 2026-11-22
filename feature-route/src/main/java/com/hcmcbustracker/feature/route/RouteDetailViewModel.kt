@@ -8,6 +8,8 @@ import com.hcmcbustracker.core.model.BusStop
 import com.hcmcbustracker.core.model.Route
 import com.hcmcbustracker.core.model.RoutePath
 import com.hcmcbustracker.core.model.RouteVariant
+import com.hcmcbustracker.core.model.Timetable
+import com.hcmcbustracker.core.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +29,11 @@ data class RouteDetailUiState(
     val selectedVariant: RouteVariant? = null,
     val stops: List<BusStop> = emptyList(),
     val path: RoutePath? = null,
+    val timetables: List<Timetable> = emptyList(),
+    val trips: List<Trip> = emptyList(),
+    val hourlyTripCounts: Map<Int, Int>? = null,
+    val isTimetableLoading: Boolean = false,
+    val timetableErrorMessage: String? = null,
     val isFavorite: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null
@@ -38,10 +45,15 @@ class RouteDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val routeId: Int = checkNotNull(savedStateHandle["routeId"])
+    val routeId: Int = checkNotNull(savedStateHandle["routeId"])
     private val _selectedVarId = MutableStateFlow<Int?>(null)
     private val _isLoading = MutableStateFlow(false)
     private val _errorMessage = MutableStateFlow<String?>(null)
+    private val _timetables = MutableStateFlow<List<Timetable>>(emptyList())
+    private val _trips = MutableStateFlow<List<Trip>>(emptyList())
+    private val _hourlyTripCounts = MutableStateFlow<Map<Int, Int>?>(null)
+    private val _isTimetableLoading = MutableStateFlow(false)
+    private val _timetableErrorMessage = MutableStateFlow<String?>(null)
 
     private val routeFlow = repository.getRouteById(routeId)
     private val variantsFlow = repository.getVariantsForRoute(routeId)
@@ -59,20 +71,40 @@ class RouteDetailViewModel @Inject constructor(
         else flowOf(null)
     }
 
+    private data class RouteTimetableBundle(
+        val timetables: List<Timetable>,
+        val trips: List<Trip>,
+        val hourlyTripCounts: Map<Int, Int>?,
+        val isTimetableLoading: Boolean,
+        val timetableErrorMessage: String?
+    )
+
+    private val timetableDataFlow = combine(
+        _timetables,
+        _trips,
+        _hourlyTripCounts,
+        _isTimetableLoading,
+        _timetableErrorMessage
+    ) { timetables, trips, hourlyCounts, isTtLoading, ttError ->
+        RouteTimetableBundle(timetables, trips, hourlyCounts, isTtLoading, ttError)
+    }
+
     private data class RouteDetailMeta(
         val selectedVarId: Int?,
         val isLoading: Boolean,
         val isFavorite: Boolean,
-        val errorMessage: String?
+        val errorMessage: String?,
+        val timetableBundle: RouteTimetableBundle
     )
 
     private val metaFlow = combine(
         _selectedVarId,
         _isLoading,
         isFavoriteFlow,
-        _errorMessage
-    ) { varId, loading, isFav, error ->
-        RouteDetailMeta(varId, loading, isFav, error)
+        _errorMessage,
+        timetableDataFlow
+    ) { varId, loading, isFav, error, timetableBundle ->
+        RouteDetailMeta(varId, loading, isFav, error, timetableBundle)
     }
 
     val uiState: StateFlow<RouteDetailUiState> = combine(
@@ -96,6 +128,11 @@ class RouteDetailViewModel @Inject constructor(
             selectedVariant = currentVar,
             stops = stops,
             path = path,
+            timetables = meta.timetableBundle.timetables,
+            trips = meta.timetableBundle.trips,
+            hourlyTripCounts = meta.timetableBundle.hourlyTripCounts,
+            isTimetableLoading = meta.timetableBundle.isTimetableLoading,
+            timetableErrorMessage = meta.timetableBundle.timetableErrorMessage,
             isFavorite = meta.isFavorite,
             isLoading = meta.isLoading,
             errorMessage = meta.errorMessage
@@ -108,12 +145,14 @@ class RouteDetailViewModel @Inject constructor(
 
     init {
         loadRouteDetails()
+        loadTimetableSchedule()
     }
 
     fun selectVariant(varId: Int) {
         if (_selectedVarId.value == varId) return
         _selectedVarId.value = varId
         loadVariantStopsAndPath(varId)
+        loadTimetableSchedule()
     }
 
     fun toggleFavorite() {
@@ -124,47 +163,89 @@ class RouteDetailViewModel @Inject constructor(
 
     fun refreshRoute() {
         loadRouteDetails(forceNetworkRefresh = true)
+        loadTimetableSchedule()
     }
 
     private fun loadRouteDetails(forceNetworkRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            repository.ensureInitialStaticDatasetLoaded()
 
-            var variants = repository.getVariantsForRoute(routeId).firstOrNull() ?: emptyList()
-            if (forceNetworkRefresh || variants.isEmpty()) {
-                val result = repository.syncRouteDetailAndVariants(routeId)
-                if (result.isError && variants.isEmpty()) {
-                    _errorMessage.value = "Không thể tải chi tiết tuyến từ máy chủ. Đang dùng dữ liệu ngoại tuyến."
+            val currentRoute = routeFlow.firstOrNull()
+            if (currentRoute == null || forceNetworkRefresh) {
+                val syncResult = repository.syncRouteDetailAndVariants(routeId)
+                if (syncResult.isError) {
+                    _errorMessage.value = "Không thể tải thông tin tuyến. Đang dùng dữ liệu ngoại tuyến."
                 }
-                variants = repository.getVariantsForRoute(routeId).firstOrNull() ?: emptyList()
             }
 
-            val initialVar = variants.firstOrNull { it.isOutbound } ?: variants.firstOrNull()
-            if (initialVar != null) {
-                _selectedVarId.value = initialVar.id
-                loadVariantLocalOrFetch(initialVar.id, forceNetworkRefresh)
+            val variants = variantsFlow.firstOrNull().orEmpty()
+            val targetVarId = _selectedVarId.value ?: variants.firstOrNull()?.id
+            if (targetVarId != null) {
+                _selectedVarId.value = targetVarId
+                loadVariantLocalOrFetch(targetVarId, forceNetworkRefresh)
             }
+
             _isLoading.value = false
+        }
+    }
+
+    fun loadTimetableSchedule() {
+        viewModelScope.launch {
+            _isTimetableLoading.value = true
+            _timetableErrorMessage.value = null
+            val res = repository.getTimetablesForRoute(routeId)
+            if (res.isSuccess) {
+                val tables = res.getOrDefault(emptyList())
+                _timetables.value = tables
+
+                val targetVarId = _selectedVarId.value
+                val matchedTable = tables.firstOrNull { it.varId == targetVarId } ?: tables.firstOrNull()
+                if (matchedTable != null) {
+                    val tripRes = repository.getTripsForTimetable(routeId, matchedTable.id)
+                    if (tripRes.isSuccess) {
+                        val trips = tripRes.getOrDefault(emptyList())
+                        _trips.value = trips
+                        val counts = mutableMapOf<Int, Int>()
+                        for (trip in trips) {
+                            val hour = trip.startTime.replace("h", ":").split(":").firstOrNull()?.trim()?.toIntOrNull()
+                            if (hour != null && hour in 0..23) {
+                                counts[hour] = (counts[hour] ?: 0) + 1
+                            }
+                        }
+                        _hourlyTripCounts.value = counts.ifEmpty { null }
+                    } else {
+                        _trips.value = emptyList()
+                        _hourlyTripCounts.value = null
+                    }
+                } else {
+                    _trips.value = emptyList()
+                    _hourlyTripCounts.value = null
+                }
+            } else {
+                _timetables.value = emptyList()
+                _trips.value = emptyList()
+                _hourlyTripCounts.value = null
+                _timetableErrorMessage.value = "Chưa có thông tin lịch trình cho tuyến này."
+            }
+            _isTimetableLoading.value = false
         }
     }
 
     private fun loadVariantStopsAndPath(varId: Int) {
         viewModelScope.launch {
-            _isLoading.value = true
             loadVariantLocalOrFetch(varId, forceNetworkRefresh = false)
-            _isLoading.value = false
         }
     }
 
     private suspend fun loadVariantLocalOrFetch(varId: Int, forceNetworkRefresh: Boolean) {
-        val localStops = repository.getStopsForRouteVar(routeId, varId).firstOrNull() ?: emptyList()
-        if (forceNetworkRefresh || localStops.isEmpty()) {
+        val localStops = repository.getStopsForRouteVar(routeId, varId).firstOrNull().orEmpty()
+        val localPath = repository.getRoutePath(routeId, varId).firstOrNull()
+
+        if (localStops.isEmpty() || forceNetworkRefresh) {
             repository.syncStopsForRouteVar(routeId, varId)
         }
-        val localPath = repository.getRoutePath(routeId, varId).firstOrNull()
-        if (localPath == null || localPath.points.size < 2) {
+        if (localPath == null || forceNetworkRefresh) {
             repository.ensureRoutePath(routeId, varId)
         }
     }

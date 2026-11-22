@@ -23,10 +23,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.hcmcbustracker.core.designsystem.theme.BadgeShape
 import com.hcmcbustracker.core.designsystem.theme.GreenPrimary
+import com.hcmcbustracker.core.designsystem.theme.PillShape
 import com.hcmcbustracker.core.designsystem.theme.RedApproaching
+import com.hcmcbustracker.core.designsystem.theme.TransitDimens
 
+/**
+ * Standard bus route identifier badge.
+ * Provides high-contrast styling and consistent sizing across cards, sheets, and maps.
+ */
 @Composable
 fun RouteBadge(
     routeNo: String,
@@ -36,20 +42,27 @@ fun RouteBadge(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(BadgeShape)
             .background(backgroundColor)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(
+                horizontal = TransitDimens.SpacingSm + 1.dp,
+                vertical = TransitDimens.SpacingXs
+            ),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = routeNo,
             color = contentColor,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = FontWeight.Bold
+            )
         )
     }
 }
 
+/**
+ * Arrival ETA chip displaying approaching urgency with Apple HIG color coding.
+ */
 @Composable
 fun ArrivalTimeChip(
     etaMinutes: Int,
@@ -61,43 +74,62 @@ fun ArrivalTimeChip(
 
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = bgColor.copy(alpha = 0.15f)
+        shape = PillShape,
+        color = bgColor.copy(alpha = 0.14f)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(
+                horizontal = TransitDimens.SpacingMd,
+                vertical = TransitDimens.SpacingXs
+            ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Default.DirectionsBus,
                 contentDescription = null,
                 tint = bgColor,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(TransitDimens.IconSm)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(TransitDimens.SpacingXs))
             Text(
                 text = text,
                 color = bgColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold
+                )
             )
         }
     }
 }
 
+/**
+ * Universal loading state indicator with transit-style progress indicator.
+ */
 @Composable
 fun LoadingState(
     modifier: Modifier = Modifier,
     message: String = "Đang tải dữ liệu..."
 ) {
     Box(
-        modifier = modifier.fillMaxWidth().padding(32.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(TransitDimens.Spacing2xl),
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(text = message, style = MaterialTheme.typography.bodyMedium)
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.5.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(TransitDimens.SpacingMd))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Medium
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

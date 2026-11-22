@@ -3,15 +3,19 @@ package com.hcmcbustracker.feature.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hcmcbustracker.core.database.repository.BusRepository
+import com.hcmcbustracker.core.model.ActiveVehicleSummary
 import com.hcmcbustracker.core.model.BusStop
+import com.hcmcbustracker.core.model.LicensePlateNormalizer
 import com.hcmcbustracker.core.model.Route
+import com.hcmcbustracker.core.model.SearchHistoryItem
+import com.hcmcbustracker.core.model.SearchHistoryType
+import com.hcmcbustracker.core.model.sortedByRouteNumber
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -19,17 +23,23 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class SearchTab { ROUTES, STOPS }
+enum class SearchTab(val label: String) {
+    ALL("Tất cả"),
+    ROUTES("Tuyến xe"),
+    STOPS("Trạm dừng"),
+    VEHICLES("Biển số xe")
+}
 
 data class SearchUiState(
     val query: String = "",
-    val selectedTab: SearchTab = SearchTab.ROUTES,
+    val selectedTab: SearchTab = SearchTab.ALL,
     val routes: List<Route> = emptyList(),
     val stops: List<BusStop> = emptyList(),
+    val vehicles: List<ActiveVehicleSummary> = emptyList(),
+    val searchHistory: List<SearchHistoryItem> = emptyList(),
     val favoriteRouteIds: Set<Int> = emptySet(),
     val favoriteStopIds: Set<Int> = emptySet(),
     val isLoading: Boolean = false,
@@ -43,7 +53,7 @@ class SearchViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
-    private val _selectedTab = MutableStateFlow(SearchTab.ROUTES)
+    private val _selectedTab = MutableStateFlow(SearchTab.ALL)
     private val _isSyncing = MutableStateFlow(false)
     private val _errorMessage = MutableStateFlow<String?>(null)
 
@@ -63,6 +73,7 @@ class SearchViewModel @Inject constructor(
             if (q.isBlank()) repository.getAllRoutes()
             else repository.searchRoutes(q)
         }
+        .map { it.sortedByRouteNumber() }
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     private val stopsFlow = _query
@@ -72,6 +83,31 @@ class SearchViewModel @Inject constructor(
             if (q.isBlank()) flowOf(emptyList())
             else repository.searchStops(q)
         }
+
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
+    private val vehiclesFlow = _query
+        .debounce(300)
+        .distinctUntilChanged()
+        .map { q ->
+            if (q.isBlank()) emptyList()
+            else repository.searchActiveVehiclesByPlate(q)
+        }
+
+    private data class DataResults(
+        val routes: List<Route>,
+        val stops: List<BusStop>,
+        val vehicles: List<ActiveVehicleSummary>,
+        val history: List<SearchHistoryItem>
+    )
+
+    private val dataResultsFlow = combine(
+        routesFlow,
+        stopsFlow,
+        vehiclesFlow,
+        repository.getSearchHistory()
+    ) { routes, stops, vehicles, history ->
+        DataResults(routes, stops, vehicles, history)
+    }
 
     private data class SearchParams(
         val query: String,
@@ -89,18 +125,24 @@ class SearchViewModel @Inject constructor(
         SearchParams(query, tab, syncing, error)
     }
 
-    val uiState: StateFlow<SearchUiState> = combine(
-        searchParamsFlow,
-        routesFlow,
-        stopsFlow,
+    private val favoritesFlow = combine(
         favoriteRouteIdsFlow,
         favoriteStopIdsFlow
-    ) { params, routes, stops, favRoutes, favStops ->
+    ) { favRoutes, favStops -> favRoutes to favStops }
+
+    val uiState: StateFlow<SearchUiState> = combine(
+        searchParamsFlow,
+        dataResultsFlow,
+        favoritesFlow
+    ) { params, data, favorites ->
+        val (favRoutes, favStops) = favorites
         SearchUiState(
             query = params.query,
             selectedTab = params.tab,
-            routes = routes,
-            stops = stops,
+            routes = data.routes,
+            stops = data.stops,
+            vehicles = data.vehicles,
+            searchHistory = data.history,
             favoriteRouteIds = favRoutes,
             favoriteStopIds = favStops,
             isLoading = false,
@@ -123,6 +165,34 @@ class SearchViewModel @Inject constructor(
 
     fun onTabSelected(tab: SearchTab) {
         _selectedTab.value = tab
+    }
+
+    fun onHistoryItemClicked(item: SearchHistoryItem) {
+        _query.value = item.query
+        when (item.type) {
+            SearchHistoryType.ROUTE -> _selectedTab.value = SearchTab.ROUTES
+            SearchHistoryType.STOP -> _selectedTab.value = SearchTab.STOPS
+            SearchHistoryType.PLATE -> _selectedTab.value = SearchTab.VEHICLES
+            SearchHistoryType.GENERAL -> _selectedTab.value = SearchTab.ALL
+        }
+    }
+
+    fun removeHistoryItem(query: String) {
+        viewModelScope.launch {
+            repository.removeSearchHistoryItem(query)
+        }
+    }
+
+    fun clearAllHistory() {
+        viewModelScope.launch {
+            repository.clearSearchHistory()
+        }
+    }
+
+    fun recordSearchSelection(query: String, type: SearchHistoryType = SearchHistoryType.GENERAL) {
+        viewModelScope.launch {
+            repository.addSearchHistory(query, type)
+        }
     }
 
     fun toggleFavoriteRoute(routeId: Int) {
@@ -154,9 +224,13 @@ class SearchViewModel @Inject constructor(
 
     private fun initialSyncIfNeeded() {
         viewModelScope.launch {
-            val lastRoutesSync = repository.getLastSyncTimestamp("ROUTES")
-            if (lastRoutesSync == null) {
-                triggerSync()
+            val routeCount = repository.getRouteCount()
+            val stopCount = repository.getStopCount()
+            if (routeCount == 0 || stopCount == 0) {
+                val loaded = repository.ensureInitialStaticDatasetLoaded()
+                if (!loaded) {
+                    triggerSync()
+                }
             }
         }
     }

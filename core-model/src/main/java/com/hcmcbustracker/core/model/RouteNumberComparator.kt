@@ -1,105 +1,132 @@
 package com.hcmcbustracker.core.model
 
-import java.util.Locale
-
 /**
- * Shared Natural Alphanumeric Comparator for Bus Route Numbers in HCMC Bus Tracker.
+ * Natural route number comparator designed for Ho Chi Minh City transit routes.
  *
- * Rules:
- * 1. Group 1 (Alphabetic prefix): Routes starting with letters (e.g. A01, D4, DL01, MRT1, SWB1)
- *    are prioritized and displayed BEFORE numeric routes, sorted alphabetically (case-insensitive).
- * 2. Group 2 (Numeric prefix): Routes starting with digits (e.g. 01, 02, 08, 10, 19, 56, 122, 150)
- *    are sorted by their natural numeric value rather than lexical order (so 10 < 150, 2 < 10).
- * 3. Group 3 (Mixed chunks): Routes with hyphenated or alphanumeric suffix (e.g. 62-1, 62-2, 70-1, 156D, 156V)
- *    are chunked into alternating text and number parts, comparing numeric parts by value.
- *
- * Preserves original EBMS route codes and leading zeros.
+ * Requirements:
+ * 1. Purely numeric routes (e.g. "01", "1", "02", "03", "10", "150", "152") sort in natural numeric order:
+ *    1, 2, 3... 10... 150...
+ * 2. Purely numeric routes strictly precede letter-prefixed or alphanumeric routes:
+ *    "01", "02", "03"... "150" < "D4", "DL01", "72-1"
+ * 3. Hyphenated / suffixed numeric routes (e.g. "60-3", "70-2", "72-1", "72-2C") sort by base number,
+ *    then by suffix.
+ * 4. Letter-prefixed routes (e.g. "D1", "D2", "D4", "DL01", "DL06") sort by letter prefix, then trailing number:
+ *    "D1" < "D2" < "D4" < "DL01" < "DL06".
+ * 5. Case-insensitive and resilient to leading/trailing whitespace.
  */
-object RouteNumberComparator : Comparator<String?> {
+object RouteNumberComparator : Comparator<String> {
 
-    private val TOKEN_REGEX = Regex("(\\d+|[a-zA-Z]+|[^a-zA-Z0-9]+)")
+    @JvmField
+    val ROUTE_COMPARATOR: Comparator<Route> = Comparator { r1, r2 -> compare(r1.routeNo, r2.routeNo) }
 
-    override fun compare(r1: String?, r2: String?): Int {
-        if (r1 == null && r2 == null) return 0
-        if (r1 == null) return -1
-        if (r2 == null) return 1
+    private val PURE_NUMBER_REGEX = Regex("""^0*(\d+)$""")
+    private val NUMBER_WITH_SUFFIX_REGEX = Regex("""^0*(\d+)[-_/](.+)$""")
+    private val PREFIX_THEN_NUMBER_REGEX = Regex("""^([a-zA-Z]+)0*(\d*)(.*)$""")
 
-        val s1 = r1.trim()
-        val s2 = r2.trim()
-        if (s1.isEmpty() && s2.isEmpty()) return 0
-        if (s1.isEmpty()) return -1
-        if (s2.isEmpty()) return 1
+    override fun compare(routeA: String?, routeB: String?): Int {
+        val a = routeA?.trim().orEmpty()
+        val b = routeB?.trim().orEmpty()
 
-        // Category 1: Letter prefix (A01, D4, DL01...)
-        // Category 2: Digit prefix (01, 150...)
-        // Category 3: Other
-        val cat1 = getCategory(s1)
-        val cat2 = getCategory(s2)
+        if (a == b) return 0
+        if (a.isEmpty()) return 1
+        if (b.isEmpty()) return -1
 
-        if (cat1 != cat2) {
-            return cat1.compareTo(cat2)
+        val parsedA = parseRouteKey(a)
+        val parsedB = parseRouteKey(b)
+
+        return parsedA.compareTo(parsedB)
+    }
+
+    private fun parseRouteKey(routeNo: String): RouteSortKey {
+        // Case 1: Pure number (e.g., "01", "2", "150")
+        PURE_NUMBER_REGEX.matchEntire(routeNo)?.let { match ->
+            val num = match.groupValues[1].toLongOrNull() ?: Long.MAX_VALUE
+            return RouteSortKey(
+                tier = 0,
+                primaryNumber = num,
+                secondaryNumber = 0L,
+                prefix = "",
+                suffix = routeNo
+            )
         }
 
-        // Chunked natural comparison
-        val tokens1 = tokenize(s1)
-        val tokens2 = tokenize(s2)
-        val minSize = minOf(tokens1.size, tokens2.size)
+        // Case 2: Number with suffix / sub-route (e.g., "72-1", "60-3", "72-2C")
+        NUMBER_WITH_SUFFIX_REGEX.matchEntire(routeNo)?.let { match ->
+            val num = match.groupValues[1].toLongOrNull() ?: Long.MAX_VALUE
+            val suffix = match.groupValues[2]
+            val subNum = suffix.filter { it.isDigit() }.toLongOrNull() ?: 0L
+            return RouteSortKey(
+                tier = 1,
+                primaryNumber = num,
+                secondaryNumber = subNum,
+                prefix = "",
+                suffix = suffix.lowercase()
+            )
+        }
 
-        for (i in 0 until minSize) {
-            val t1 = tokens1[i]
-            val t2 = tokens2[i]
+        // Case 3: Letter prefix then number (e.g., "D4", "D1", "DL01", "DL06")
+        PREFIX_THEN_NUMBER_REGEX.matchEntire(routeNo)?.let { match ->
+            val prefix = match.groupValues[1].uppercase()
+            val num = match.groupValues[2].toLongOrNull() ?: 0L
+            val remainder = match.groupValues[3].lowercase()
+            return RouteSortKey(
+                tier = 2,
+                primaryNumber = num,
+                secondaryNumber = 0L,
+                prefix = prefix,
+                suffix = remainder
+            )
+        }
 
-            val isNum1 = t1.all { it.isDigit() }
-            val isNum2 = t2.all { it.isDigit() }
+        // Case 4: Any other miscellaneous code
+        return RouteSortKey(
+            tier = 3,
+            primaryNumber = Long.MAX_VALUE,
+            secondaryNumber = 0L,
+            prefix = routeNo.lowercase(),
+            suffix = ""
+        )
+    }
 
-            if (isNum1 && isNum2) {
-                val n1 = t1.toLongOrNull() ?: Long.MAX_VALUE
-                val n2 = t2.toLongOrNull() ?: Long.MAX_VALUE
-                val numCmp = n1.compareTo(n2)
-                if (numCmp != 0) return numCmp
-
-                // If values are equal (e.g. "01" vs "1"), deterministic secondary check
-                val lenCmp = t1.length.compareTo(t2.length)
-                if (lenCmp != 0) return lenCmp
-            } else if (isNum1) {
-                return -1 // numbers before letters in secondary chunks
-            } else if (isNum2) {
-                return 1
-            } else {
-                val strCmp = t1.compareTo(t2, ignoreCase = true)
-                if (strCmp != 0) return strCmp
+    private data class RouteSortKey(
+        val tier: Int,
+        val primaryNumber: Long,
+        val secondaryNumber: Long,
+        val prefix: String,
+        val suffix: String
+    ) : Comparable<RouteSortKey> {
+        override fun compareTo(other: RouteSortKey): Int {
+            if (this.tier != other.tier) {
+                return this.tier.compareTo(other.tier)
+            }
+            return when (this.tier) {
+                0 -> {
+                    val numComp = this.primaryNumber.compareTo(other.primaryNumber)
+                    if (numComp != 0) numComp else this.suffix.compareTo(other.suffix)
+                }
+                1 -> {
+                    val numComp = this.primaryNumber.compareTo(other.primaryNumber)
+                    if (numComp != 0) return numComp
+                    val secComp = this.secondaryNumber.compareTo(other.secondaryNumber)
+                    if (secComp != 0) secComp else this.suffix.compareTo(other.suffix)
+                }
+                2 -> {
+                    val prefixComp = this.prefix.compareTo(other.prefix)
+                    if (prefixComp != 0) return prefixComp
+                    val numComp = this.primaryNumber.compareTo(other.primaryNumber)
+                    if (numComp != 0) numComp else this.suffix.compareTo(other.suffix)
+                }
+                else -> this.prefix.compareTo(other.prefix)
             }
         }
-
-        return tokens1.size.compareTo(tokens2.size).let {
-            if (it != 0) it else s1.compareTo(s2)
-        }
-    }
-
-    private fun getCategory(s: String): Int {
-        val first = s.first()
-        return when {
-            first.isLetter() -> 1 // Alphabetic prefix first
-            first.isDigit() -> 2  // Numeric prefix second
-            else -> 3
-        }
-    }
-
-    private fun tokenize(s: String): List<String> {
-        return TOKEN_REGEX.findAll(s).map { it.value }.toList()
-    }
-
-    /**
-     * Comparator for Route objects based on their routeNo.
-     */
-    val ROUTE_COMPARATOR = Comparator<Route> { r1, r2 ->
-        compare(r1.routeNo, r2.routeNo)
-    }
-
-    /**
-     * Comparator for RouteCombo objects based on their routeNo.
-     */
-    val ROUTE_COMBO_COMPARATOR = Comparator<RouteCombo> { r1, r2 ->
-        compare(r1.routeNo, r2.routeNo)
     }
 }
+
+/**
+ * Extension functions for natural route number sorting.
+ */
+fun List<Route>.sortedByRouteNumber(): List<Route> =
+    sortedWith(RouteNumberComparator.ROUTE_COMPARATOR)
+
+fun List<RouteCombo>.sortedCombosByRouteNumber(): List<RouteCombo> =
+    sortedWith { r1, r2 -> RouteNumberComparator.compare(r1.routeNo, r2.routeNo) }

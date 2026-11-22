@@ -13,6 +13,8 @@ import com.hcmcbustracker.core.model.RouteVariant
 import com.hcmcbustracker.core.model.RouteVariantPollingTarget
 import com.hcmcbustracker.core.model.RouteVehicleAggregator
 import com.hcmcbustracker.core.model.RouteVehicleTelemetry
+import com.hcmcbustracker.core.model.SearchHistoryItem
+import com.hcmcbustracker.core.model.SearchHistoryType
 import com.hcmcbustracker.core.model.StaticDatasetMetadata
 import com.hcmcbustracker.core.model.UserPreferences
 import kotlinx.coroutines.flow.Flow
@@ -70,6 +72,18 @@ interface BusRepository {
         previousByRouteVar: Map<Pair<Int, Int>, Map<String, RouteVehicleTelemetry>> = emptyMap()
     ): Map<Pair<Int, Int>, NetworkResult<RouteVehicleAggregator.DeduplicationResult>> = emptyMap()
 
+    // --- Phase 13: Timetable & Operating Hours ---
+    suspend fun getTimetablesForRoute(routeId: Int): NetworkResult<List<com.hcmcbustracker.core.model.Timetable>> =
+        NetworkResult.Success(emptyList())
+    suspend fun getTripsForTimetable(routeId: Int, timetableId: Int): NetworkResult<List<com.hcmcbustracker.core.model.Trip>> =
+        NetworkResult.Success(emptyList())
+
+    // --- Phase 13: License Plate Fleet Lookup ---
+    fun searchActiveVehiclesByPlate(query: String): List<com.hcmcbustracker.core.model.ActiveVehicleSummary> =
+        com.hcmcbustracker.core.model.ActiveFleetRegistry.searchByPlate(query)
+    fun getActiveVehicleByPlate(plateNumber: String): com.hcmcbustracker.core.model.ActiveVehicleSummary? =
+        com.hcmcbustracker.core.model.ActiveFleetRegistry.getVehicle(plateNumber)
+
     // --- User Favorites ---
     fun isStopFavorite(stopId: Int): Flow<Boolean>
     suspend fun toggleFavoriteStop(stopId: Int)
@@ -78,11 +92,20 @@ interface BusRepository {
     fun isRouteFavorite(routeId: Int): Flow<Boolean>
     suspend fun toggleFavoriteRoute(routeId: Int)
     fun getFavoriteRoutes(): Flow<List<Route>>
+    suspend fun cleanupOrphanFavorites()
+
+    // --- Search History ---
+    fun getSearchHistory(): Flow<List<SearchHistoryItem>>
+    suspend fun addSearchHistory(query: String, type: SearchHistoryType = SearchHistoryType.GENERAL)
+    suspend fun removeSearchHistoryItem(query: String)
+    suspend fun clearSearchHistory()
 
     // --- App Settings & User Preferences ---
     fun getUserPreferences(): Flow<UserPreferences>
     suspend fun setThemeMode(mode: AppThemeMode)
     suspend fun setPollingIntervalSeconds(seconds: Int)
     suspend fun setNotificationsEnabled(enabled: Boolean)
+    suspend fun setArrivalAlertThresholds(timeMinutes: Int, distanceMeters: Double)
+    suspend fun toggleStopNotification(stopId: Int, enabled: Boolean)
     suspend fun clearCache()
 }

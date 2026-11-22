@@ -2,9 +2,13 @@ package com.hcmcbustracker.feature.map
 
 import app.cash.turbine.test
 import com.hcmcbustracker.core.database.repository.BusRepository
+import com.hcmcbustracker.core.model.ArrivalVehicle
 import com.hcmcbustracker.core.model.BusStop
+import com.hcmcbustracker.core.model.NetworkResult
+import com.hcmcbustracker.core.model.Prediction
 import com.hcmcbustracker.core.model.Route
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +59,7 @@ class HomeViewModelTest {
         Dispatchers.setMain(testDispatcher)
         every { repository.getAllRoutes() } returns flowOf(sampleRoutes)
         every { repository.getFavoriteStops() } returns flowOf(sampleStops)
+        every { repository.getFavoriteRoutes() } returns flowOf(sampleRoutes.take(1))
         coEvery { repository.getRouteCount() } returns 2
 
         viewModel = HomeViewModel(repository)
@@ -93,5 +98,60 @@ class HomeViewModelTest {
             assertEquals("01", state.query)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `refreshFavoriteEta loads predictions for top favorite stop`() = runTest {
+        val samplePrediction = listOf(
+            Prediction(
+                routeId = 1,
+                routeNo = "01",
+                routeName = "Bến Thành - Chợ Lớn",
+                stopId = 142,
+                stopName = "Bến xe buýt Sài Gòn",
+                varId = 1,
+                destinationName = "Bến xe Chợ Lớn",
+                vehicles = listOf(
+                    ArrivalVehicle(
+                        plateNumber = "51B-123.45",
+                        etaSeconds = 120,
+                        distanceMeters = 500.0,
+                        speedKmH = 20.0,
+                        timestampIso = "2026-11-15T09:00:00Z",
+                        status = 1
+                    )
+                )
+            )
+        )
+        coEvery { repository.fetchRealtimePrediction(142) } returns NetworkResult.Success(samplePrediction)
+
+        viewModel.refreshFavoriteEta()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiState.test {
+            var state = awaitItem()
+            if (state.favoriteEta?.predictions.isNullOrEmpty()) {
+                state = awaitItem()
+            }
+            assertEquals(142, state.favoriteEta?.stop?.id)
+            assertEquals("01", state.favoriteEta?.predictions?.first()?.routeNo)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `toggleFavoriteStop calls repository toggleFavoriteStop`() = runTest {
+        viewModel.toggleFavoriteStop(142)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { repository.toggleFavoriteStop(142) }
+    }
+
+    @Test
+    fun `toggleFavoriteRoute calls repository toggleFavoriteRoute`() = runTest {
+        viewModel.toggleFavoriteRoute(1)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { repository.toggleFavoriteRoute(1) }
     }
 }

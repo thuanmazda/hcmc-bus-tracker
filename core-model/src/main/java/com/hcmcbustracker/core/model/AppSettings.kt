@@ -15,5 +15,8 @@ enum class AppThemeMode(val displayName: String) {
 data class UserPreferences(
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val pollingIntervalSeconds: Int = 15,
-    val notificationsEnabled: Boolean = true
+    val notificationsEnabled: Boolean = true,
+    val alertTimeMinutes: Int = 5,
+    val alertDistanceMeters: Double = 1000.0,
+    val disabledStopNotificationIds: Set<Int> = emptySet()
 )

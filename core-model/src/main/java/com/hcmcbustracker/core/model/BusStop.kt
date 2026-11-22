@@ -24,14 +24,57 @@ data class BusStop(
 ) {
     /**
      * Formats full readable address (e.g. "4 Hàm Nghi, Phường Bến Thành, Quận 1").
+     * Normalizes trailing punctuation, delimiters, and incomplete trailing administrative tokens.
      */
     val fullAddress: String
-        get() {
+        get() = formatStopAddress(addressNo, street, ward, zone)
+
+    companion object {
+        private val STANDALONE_ADMIN_REGEX = Regex("""^(Phường|Quận|P\.|Q\.)\s*$""", RegexOption.IGNORE_CASE)
+        private val DANGLING_ADMIN_REGEX = Regex("""(^|[,;\s\-]+)(Phường|Quận|P\.|Q\.)\s*$""", RegexOption.IGNORE_CASE)
+        private val MULTIPLE_COMMAS_REGEX = Regex(""",\s*(,\s*)+""")
+
+        /**
+         * Formats and cleans address components into a standardized string without trailing delimiters.
+         */
+        fun formatStopAddress(
+            addressNo: String,
+            street: String,
+            ward: String?,
+            zone: String
+        ): String {
+            fun cleanPart(text: String?): String {
+                if (text.isNullOrBlank()) return ""
+                var s = text.trim().trim(',', '.', ';', '-', ' ')
+                if (STANDALONE_ADMIN_REGEX.matches(s)) return ""
+                // Strip dangling incomplete administrative qualifiers at the end (e.g. "..., Phường")
+                s = DANGLING_ADMIN_REGEX.replace(s, "").trim().trimEnd(',', '.', ';', '-', ' ')
+                return s
+            }
+
+            val cleanAddressNo = cleanPart(addressNo)
+            val cleanStreet = cleanPart(street)
+            val cleanWard = cleanPart(ward)
+            val cleanZone = cleanPart(zone)
+
             val parts = mutableListOf<String>()
-            if (addressNo.isNotBlank()) parts.add(addressNo)
-            if (street.isNotBlank() && !addressNo.contains(street, ignoreCase = true)) parts.add(street)
-            if (!ward.isNullOrBlank()) parts.add(ward)
-            if (zone.isNotBlank()) parts.add(zone)
-            return parts.joinToString(", ")
+            if (cleanAddressNo.isNotBlank()) {
+                parts.add(cleanAddressNo)
+            }
+            if (cleanStreet.isNotBlank() && !cleanAddressNo.contains(cleanStreet, ignoreCase = true)) {
+                parts.add(cleanStreet)
+            }
+            if (cleanWard.isNotBlank() && !cleanAddressNo.contains(cleanWard, ignoreCase = true) && !cleanStreet.contains(cleanWard, ignoreCase = true)) {
+                parts.add(cleanWard)
+            }
+            if (cleanZone.isNotBlank() && !cleanAddressNo.contains(cleanZone, ignoreCase = true) && !cleanWard.contains(cleanZone, ignoreCase = true)) {
+                parts.add(cleanZone)
+            }
+
+            var joined = parts.joinToString(", ")
+            joined = MULTIPLE_COMMAS_REGEX.replace(joined, ", ")
+            joined = DANGLING_ADMIN_REGEX.replace(joined, "").trim().trimEnd(',', '.', ';', '-', ' ')
+            return joined
         }
+    }
 }
